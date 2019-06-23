@@ -5,4 +5,7 @@ authors = ["vthib <vthiberville@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+# Rust bindings on libgit2
 git2 = "0.9"
+# Command line options handler
+clap = "2.33"
