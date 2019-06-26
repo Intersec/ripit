@@ -3,8 +3,8 @@ use crate::util;
 /// Build a revwalk to iterate from a commit (excluded), up to the branch's last commit
 fn build_revwalk<'a>(
     repo: &'a git2::Repository,
+    commit: &git2::Commit,
     branch: &git2::Object,
-    commit: &git2::Object,
 ) -> Result<git2::Revwalk<'a>, git2::Error> {
     let mut revwalk = repo.revwalk()?;
     revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE);
@@ -12,6 +12,22 @@ fn build_revwalk<'a>(
     revwalk.hide(commit.id())?;
     Ok(revwalk)
 }
+
+// {{{ Fetch remote
+
+pub fn update_remote(
+    repo: &git2::Repository,
+    remote_name: &str,
+    branch_rev: &str,
+) -> Result<(), git2::Error> {
+    let mut remote = repo.find_remote(remote_name)?;
+
+    println!("fetch branch {} in remote {}...", branch_rev, remote_name);
+    remote.fetch(&[&branch_rev], None, None)
+}
+
+// }}}
+// {{{ Sync branch
 
 /// Cherrypick a given commit on top of HEAD, and add the ripit tag
 fn cherrypick(repo: &git2::Repository, commit: &git2::Commit) -> Result<(), git2::Error> {
@@ -41,15 +57,45 @@ fn cherrypick(repo: &git2::Repository, commit: &git2::Commit) -> Result<(), git2
     Ok(())
 }
 
+/// Parse the commit message to retrieve the SHA-1 stored as a ripit tag
+///
+/// If the commit message contains the string "rip-it: <sha-1>", the sha-1 is returned
+fn retrieve_ripit_tag(commit: &git2::Commit) -> Option<String> {
+    let msg = commit.message()?;
+    let tag_index = msg.find("rip-it: ")?;
+    let sha1_start = tag_index + 8;
+
+    if msg.len() >= sha1_start + 40 {
+        Some(msg[(sha1_start)..(sha1_start + 40)].to_owned())
+    } else {
+        None
+    }
+}
+
 /// Sync the local repository with the new changes from the given remote
 pub fn sync_branch_with_remote(
     repo: &git2::Repository,
-    branch: &git2::Object,
-    commit: &git2::Object,
+    remote: &str,
+    branch_rev: &str,
 ) -> Result<(), git2::Error> {
-    // Build revwalk from specified commit up to specified branch
-    let revwalk = build_revwalk(&repo, &branch, &commit)?;
+    // Get SHA-1 of last synced commit
+    let local_branch = repo.revparse_single(branch_rev)?;
+    let sha1 = match retrieve_ripit_tag(&local_branch.peel_to_commit()?) {
+        Some(sha1) => sha1,
+        None => return Ok(()),
+    };
+    println!("found sha-1 {}", sha1);
 
+    // Get the commit related to this SHA-1
+    let commit = repo.find_commit(git2::Oid::from_str(&sha1)?)?;
+
+    // Get the branch last commit in the remote
+    let remote_branch = repo.revparse_single(&format!("{}/{}", remote, branch_rev))?;
+
+    // Build revwalk from specified commit up to last commit in branch in remote
+    let revwalk = build_revwalk(&repo, &commit, &remote_branch)?;
+
+    // print out a summary of what would be cherry-picked
     print!("Commits to cherry-pick:\n\n");
     for oid in revwalk {
         let ci = repo.find_commit(oid?)?;
@@ -68,7 +114,8 @@ pub fn sync_branch_with_remote(
         return Ok(());
     }
 
-    let revwalk = build_revwalk(&repo, &branch, &commit)?;
+    // cherry-pick every commit, and add the rip-it tag in the commits messages
+    let revwalk = build_revwalk(&repo, &commit, &remote_branch)?;
     for oid in revwalk {
         let ci = repo.find_commit(oid?)?;
 
@@ -77,3 +124,5 @@ pub fn sync_branch_with_remote(
 
     Ok(())
 }
+
+// }}}

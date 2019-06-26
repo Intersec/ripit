@@ -5,18 +5,17 @@ mod util;
 fn _main() -> Result<(), git2::Error> {
     let matches = app::parse_args();
 
-    let remote = matches.value_of("REMOTE").unwrap();
-
     let repo_path = matches.value_of("REPO").unwrap_or(".");
     let repo = git2::Repository::open(repo_path)?;
 
     let branch_rev = matches.value_of("BRANCH").unwrap();
-    let branch = repo.revparse_single(&format!("{}/{}", remote, branch_rev))?;
+    let remote = matches.value_of("REMOTE").unwrap();
 
-    let commit_rev = matches.value_of("COMMIT").unwrap();
-    let commit = repo.revparse_single(&format!("{}/{}", remote, commit_rev))?;
+    // fetch last commits in remote
+    sync::update_remote(&repo, &remote, &branch_rev)?;
 
-    sync::sync_branch_with_remote(&repo, &branch, &commit)
+    // sync local branch with remote by cherry-picking missing commits
+    sync::sync_branch_with_remote(&repo, &remote, &branch_rev)
 }
 
 fn main() {
