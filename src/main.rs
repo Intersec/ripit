@@ -8,7 +8,7 @@ fn _main() -> Result<(), git2::Error> {
     let repo_path = matches.value_of("REPO").unwrap_or(".");
     let repo = git2::Repository::open(repo_path)?;
 
-    let branch_rev = matches.value_of("BRANCH").unwrap();
+    let branch_rev = matches.value_of("BRANCH").unwrap_or("master");
     let remote = matches.value_of("REMOTE").unwrap();
 
     // fetch last commits in remote
