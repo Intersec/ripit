@@ -9,3 +9,5 @@ edition = "2018"
 git2 = "0.9"
 # Command line options handler
 clap = "2.33"
+# Temp dir creation for tests
+tempfile = "3.0"

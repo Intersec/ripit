@@ -29,6 +29,12 @@ pub fn update_remote(
 // }}}
 // {{{ Sync branch
 
+fn force_checkout_head(repo: &git2::Repository) -> Result<(), git2::Error> {
+    let mut opts = git2::build::CheckoutBuilder::new();
+    opts.force();
+    repo.checkout_head(Some(&mut opts))
+}
+
 /// Cherrypick a given commit on top of HEAD, and add the ripit tag
 fn cherrypick(repo: &git2::Repository, commit: &git2::Commit) -> Result<(), git2::Error> {
     let new_msg = format!(
@@ -50,9 +56,7 @@ fn cherrypick(repo: &git2::Repository, commit: &git2::Commit) -> Result<(), git2
     )?;
 
     // make the working directory match HEAD
-    let mut opts = git2::build::CheckoutBuilder::new();
-    opts.force();
-    repo.checkout_head(Some(&mut opts))?;
+    force_checkout_head(&repo)?;
 
     Ok(())
 }
@@ -141,8 +145,19 @@ fn commit_bootstrap<'a>(
     );
 
     // commit the whole index
-    let head_oid = repo.head()?.target().unwrap();
-    let head = repo.find_commit(head_oid)?;
+    let head = match repo.head() {
+        Ok(head) => {
+            let oid = head.target().unwrap();
+            Some(repo.find_commit(oid)?)
+        },
+        Err(_) => None,
+    };
+
+    let mut parents = vec![];
+    if let Some(h) = head.as_ref() {
+        parents.push(h);
+    }
+
     let sig = repo.signature()?;
     let commit_oid = repo.commit(
         Some("HEAD"),
@@ -150,13 +165,10 @@ fn commit_bootstrap<'a>(
         &sig,
         &msg,
         &remote_commit.tree()?,
-        &[&head],
+        &parents,
     )?;
 
-    // make the working directory match HEAD
-    let mut opts = git2::build::CheckoutBuilder::new();
-    opts.force();
-    repo.checkout_head(Some(&mut opts))?;
+    force_checkout_head(repo)?;
 
     Ok(repo.find_commit(commit_oid)?)
 }
