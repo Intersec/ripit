@@ -1,8 +1,9 @@
 mod app;
+mod error;
 mod sync;
 mod util;
 
-fn _main() -> Result<(), git2::Error> {
+fn _main() -> Result<(), error::Error> {
     let matches = app::parse_args();
 
     let repo_path = matches.value_of("REPO").unwrap_or(".");
@@ -27,7 +28,7 @@ fn main() {
     std::process::exit(match _main() {
         Ok(_) => 0,
         Err(e) => {
-            eprintln!("{}", e.message());
+            eprintln!("{}", e);
             // 1 is for clap, 2 for git errors for the moment
             2
         }

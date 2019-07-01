@@ -1,4 +1,5 @@
 use crate::util;
+use crate::error::Error;
 
 /// Build a revwalk to iterate from a commit (excluded), up to the branch's last commit
 fn build_revwalk<'a>(
@@ -81,12 +82,12 @@ pub fn sync_branch_with_remote(
     repo: &git2::Repository,
     remote: &str,
     branch_rev: &str,
-) -> Result<(), git2::Error> {
+) -> Result<(), Error> {
     // Get SHA-1 of last synced commit
     let local_branch = repo.revparse_single(branch_rev)?;
     let sha1 = match retrieve_ripit_tag(&local_branch.peel_to_commit()?) {
         Some(sha1) => sha1,
-        None => return Ok(()),
+        None => return Err(Error::TagMissing),
     };
     println!("found sha-1 {}", sha1);
 
@@ -182,7 +183,7 @@ pub fn bootstrap_branch_with_remote(
     repo: &git2::Repository,
     remote: &str,
     branch_rev: &str,
-) -> Result<(), git2::Error> {
+) -> Result<(), Error> {
     // Get the branch last commit in the remote
     let remote_branch = repo.revparse_single(&format!("{}/{}", remote, branch_rev))?;
     let remote_commit = remote_branch.peel_to_commit()?;
