@@ -14,8 +14,13 @@ fn _main() -> Result<(), git2::Error> {
     // fetch last commits in remote
     sync::update_remote(&repo, &remote, &branch_rev)?;
 
-    // sync local branch with remote by cherry-picking missing commits
-    sync::sync_branch_with_remote(&repo, &remote, &branch_rev)
+    if matches.is_present("BOOTSTRAP") {
+        // bootstrap the branch in the local repo with the state of the branch in the remote repo
+        sync::bootstrap_branch_with_remote(&repo, &remote, &branch_rev)
+    } else {
+        // sync local branch with remote by cherry-picking missing commits
+        sync::sync_branch_with_remote(&repo, &remote, &branch_rev)
+    }
 }
 
 fn main() {

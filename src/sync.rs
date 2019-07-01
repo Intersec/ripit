@@ -126,3 +126,60 @@ pub fn sync_branch_with_remote(
 }
 
 // }}}
+// {{{ Bootstrap branch
+
+/// Cherrypick a given commit on top of HEAD, and add the ripit tag
+fn commit_bootstrap<'a>(
+    repo: &'a git2::Repository,
+    remote_commit: &git2::Commit,
+    remote: &str,
+) -> Result<git2::Commit<'a>, git2::Error> {
+    let msg = format!(
+        "Bootstrap repository from remote {}\n\nrip-it: {}\n",
+        remote,
+        remote_commit.id()
+    );
+
+    // commit the whole index
+    let head_oid = repo.head()?.target().unwrap();
+    let head = repo.find_commit(head_oid)?;
+    let sig = repo.signature()?;
+    let commit_oid = repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        &msg,
+        &remote_commit.tree()?,
+        &[&head],
+    )?;
+
+    // make the working directory match HEAD
+    let mut opts = git2::build::CheckoutBuilder::new();
+    opts.force();
+    repo.checkout_head(Some(&mut opts))?;
+
+    Ok(repo.find_commit(commit_oid)?)
+}
+
+/// Bootstrap the branch in the local repo with the state of the branch in the remote repo
+///
+/// Create a commit that will contain the whole index of the remote's branch HEAD, with the
+/// appropriate ripit tag.
+/// Following this bootstrap, synchronisation between the two repos will be possible.
+pub fn bootstrap_branch_with_remote(
+    repo: &git2::Repository,
+    remote: &str,
+    branch_rev: &str,
+) -> Result<(), git2::Error> {
+    // Get the branch last commit in the remote
+    let remote_branch = repo.revparse_single(&format!("{}/{}", remote, branch_rev))?;
+    let remote_commit = remote_branch.peel_to_commit()?;
+
+    // build the bootstrap commit from the state of this commit
+    let commit = commit_bootstrap(&repo, &remote_commit, remote)?;
+    println!("boostrap commit {} created", commit.id());
+
+    Ok(())
+}
+
+// }}}
