@@ -7,6 +7,21 @@ mod env;
 fn test_missing_bootstrap() {
     let env = env::TestEnv::new(false);
 
-    env.run_ripit_failure(&["private"]);
+    env.remote_repo.commit_file("a.txt", "a");
+    env.remote_repo.commit_file("b.txt", "b");
+    assert_eq!(env.remote_repo.count_commits(), 3); // init + 2 commits
+
+    env.run_ripit_failure(&["private"]); // missing initial commit
+
+    env.local_repo.commit_file("priv", "priv");
+    // FIXME: should return an error
+    env.run_ripit_success(&["private"]); // missing ripit tag
+
     env.run_ripit_success(&["--bootstrap", "private"]);
+    assert_eq!(env.local_repo.count_commits(), 2); // priv + bootstrap
+    // files from both remote commits were added
+    env.local_repo.check_file("a.txt", true, true);
+    env.local_repo.check_file("b.txt", true, true);
+    // file from local commit was un-indexed, but is still present on the repo.
+    env.local_repo.check_file("priv", true, false);
 }

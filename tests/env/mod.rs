@@ -2,6 +2,20 @@ use std::env;
 use std::path::PathBuf;
 use std::process;
 use std::str;
+use std::path::Path;
+use std::fs;
+use std::io::Write;
+use std::ops::Deref;
+
+// to use to pause  the execution, so that the states of the test repos can be checked
+fn _pause() {
+    use std::io::Read;
+
+    let mut stdout = std::io::stdout();
+    stdout.write(b"Press Enter to continue...").unwrap();
+    stdout.flush().unwrap();
+    std::io::stdin().read(&mut [0]).unwrap();
+}
 
 // {{{ ripit exec handling
 
@@ -19,18 +33,68 @@ fn find_ripit_exec() -> PathBuf {
 }
 
 // }}}
+// {{{ Test repo
+
+pub struct TestRepo(git2::Repository);
+
+impl Deref for TestRepo {
+    type Target = git2::Repository;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TestRepo {
+    pub fn commit_file(&self, filename: &str, commit_msg: &str) {
+        let path = Path::new(self.workdir().unwrap()).join(filename);
+        fs::File::create(&path).unwrap().write_all(filename.as_bytes()).unwrap();
+        
+        let mut index = self.index().unwrap();
+        index.add_path(Path::new(filename)).unwrap();
+        let tree = self.find_tree(index.write_tree().unwrap()).unwrap();
+
+        let head = match self.head() {
+            Ok(tgt) => Some(self.find_commit(tgt.target().unwrap()).unwrap()),
+            Err(_) => None,
+        };
+        let sig = self.signature().unwrap();
+
+        match head {
+            Some(ci) => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[&ci]),
+            None => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[]),
+        }.unwrap();
+    }
+
+    pub fn check_file(&self, filename: &str, file_present: bool, file_in_index: bool) {
+        let path = Path::new(self.workdir().unwrap()).join(filename);
+        assert_eq!(path.exists(), file_present);
+
+        self.index().unwrap().read(true).unwrap();
+        let index_elem = self.index().unwrap().get_path(Path::new(filename), 0);
+        assert_eq!(index_elem.is_some(), file_in_index);
+    }
+
+    pub fn count_commits(&self) -> usize {
+        let mut revwalk = self.revwalk().unwrap();
+        revwalk.push_head().unwrap();
+
+        revwalk.count()
+    }
+}
+
+// }}}
 // {{{ Test environment setup
 
 pub struct TestEnv {
-    // temporary directory containing the git repo to sync
+    // temporary directories containing the git repos to sync
     local_dir: tempfile::TempDir,
-    // the git repo to sync with its remote
-    local_repo: git2::Repository,
+    _remote_dir: tempfile::TempDir,
 
-    // temporary directory containing the remote repo
-    remote_dir: tempfile::TempDir,
     // the git repo to sync with its remote
-    remote_repo: git2::Repository,
+    pub local_repo: TestRepo,
+    // the git repo holding commits to sync
+    pub remote_repo: TestRepo,
 
     // path to ripit executable
     ripit_exec: PathBuf,
@@ -41,14 +105,15 @@ impl TestEnv {
     pub fn new(first_commit_in_local: bool) -> Self {
         // git init in tmp directory for remote
         let remote_dir = tempfile::tempdir().unwrap();
-        let remote_repo = git2::Repository::init(remote_dir.path()).unwrap();
+        println!("remote dir: {:?}", remote_dir);
+        let remote_repo = TestRepo(git2::Repository::init(remote_dir.path()).unwrap());
 
         // git init in tmp directory for remote
         let local_dir = tempfile::tempdir().unwrap();
-        let local_repo = git2::Repository::init(local_dir.path()).unwrap();
+        println!("local dir: {:?}", local_dir);
+        let local_repo = TestRepo(git2::Repository::init(local_dir.path()).unwrap());
 
         // Setup remote repo as remote named "private" of local repo
-        println!("{:?}", remote_dir.path());
         let url = format!("file://{}", remote_dir.path().to_str().unwrap());
         local_repo.remote("private", &url).unwrap();
 
@@ -75,7 +140,7 @@ impl TestEnv {
         TestEnv {
             local_dir,
             local_repo,
-            remote_dir,
+            _remote_dir: remote_dir,
             remote_repo,
             ripit_exec: find_ripit_exec(),
         }
@@ -91,6 +156,11 @@ impl TestEnv {
         println!("stderr: {}", str::from_utf8(&output.stderr).unwrap());
 
         assert!(output.status.success() == successful);
+
+        // reload index for both repos, as the execution might have changed the state of the
+        // repo
+        self.local_repo.index().unwrap().read(true).unwrap();
+        self.remote_repo.index().unwrap().read(true).unwrap();
     }
 
     pub fn run_ripit_failure(&self, args: &[&str]) {

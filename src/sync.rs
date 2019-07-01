@@ -189,7 +189,7 @@ pub fn bootstrap_branch_with_remote(
 
     // build the bootstrap commit from the state of this commit
     let commit = commit_bootstrap(&repo, &remote_commit, remote)?;
-    println!("boostrap commit {} created", commit.id());
+    println!("bootstrap commit {} created", commit.id());
 
     Ok(())
 }
