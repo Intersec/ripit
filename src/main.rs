@@ -30,7 +30,7 @@ fn check_local_diff(repo: &git2::Repository) -> Result<(), error::Error> {
 fn _main() -> Result<(), error::Error> {
     let opts = app::parse_args();
 
-    let repo = git2::Repository::open(opts.repo)?;
+    let repo = git2::Repository::open(&opts.repo)?;
     check_local_diff(&repo)?;
 
     // fetch last commits in remote

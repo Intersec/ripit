@@ -7,7 +7,10 @@ edition = "2018"
 [dependencies]
 # Rust bindings on libgit2
 git2 = "0.9"
-# Command line options handler
-clap = "2.33"
 # Temp dir creation for tests
 tempfile = "3.0"
+
+# Command line options handler
+[dependencies.clap]
+version = "2.33"
+features = ["yaml", "color"]

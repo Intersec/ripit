@@ -1,5 +1,3 @@
-use clap::clap_app;
-
 pub struct Options {
     pub repo: String,
     pub branch: String,
@@ -11,19 +9,10 @@ pub struct Options {
 }
 
 pub fn parse_args() -> Options {
-    let matches = clap_app!(ripit =>
-        (version: "0.1")
-        (@arg repo: -r --repo +takes_value
-         "Path to the repository (if unset, current directory is used)")
-        (@arg branch: -b --branch +takes_value
-         "Branch to synchronize (if unset, 'master' is used)")
-        (@arg bootstrap: --bootstrap
-         "Bootstrap the local repository")
-        (@arg remote: +required "Name of the remote containing the commits to cherry-pick")
-        (@arg verbose: -v --verbose "Print verbose logs")
-        (@arg yes: -y --yes "Automatic yes to prompts")
-    )
-    .get_matches();
+    let yaml = clap::load_yaml!("cli.yml");
+    let matches = clap::App::from_yaml(yaml)
+        .setting(clap::AppSettings::ColoredHelp)
+        .get_matches();
 
     Options {
         repo: matches.value_of("repo").unwrap_or(".").to_owned(),

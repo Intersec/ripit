@@ -1,0 +1,33 @@
+name: ripit
+version: "0.1"
+about: Copy commits between git repositories
+args:
+    # git options
+    - repo:
+        short: r
+        long: repo
+        takes_value: true
+        help: "Path to the repository (default: current directory)"
+    - branch:
+        short: b
+        long: branch
+        takes_value: true
+        help: "Branch to synchronize (default: master)"
+    - remote:
+        required: true
+        help: "Name of the remote containing the commits to copy"
+
+    # type of action
+    - bootstrap:
+        long: bootstrap
+        help: "Bootstrap the local repository"
+
+    # common options shared by every action
+    - verbose:
+        short: v
+        long: verbose
+        help: "Print verbose logs"
+    - yes:
+        short: y
+        long: yes
+        help: "Automatic yes to prompts"
