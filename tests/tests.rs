@@ -18,6 +18,7 @@ fn test_missing_bootstrap() {
 
     env.run_ripit_success(&["--bootstrap", "private"]);
     assert_eq!(env.local_repo.count_commits(), 2); // priv + bootstrap
+
     // files from both remote commits were added
     env.local_repo.check_file("a.txt", true, true);
     env.local_repo.check_file("b.txt", true, true);

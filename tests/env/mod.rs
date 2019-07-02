@@ -1,11 +1,11 @@
 use std::env;
-use std::path::PathBuf;
-use std::process;
-use std::str;
-use std::path::Path;
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process;
+use std::str;
 
 // to use to pause  the execution, so that the states of the test repos can be checked
 fn _pause() {
@@ -48,8 +48,11 @@ impl Deref for TestRepo {
 impl TestRepo {
     pub fn commit_file(&self, filename: &str, commit_msg: &str) {
         let path = Path::new(self.workdir().unwrap()).join(filename);
-        fs::File::create(&path).unwrap().write_all(filename.as_bytes()).unwrap();
-        
+        fs::File::create(&path)
+            .unwrap()
+            .write_all(filename.as_bytes())
+            .unwrap();
+
         let mut index = self.index().unwrap();
         index.add_path(Path::new(filename)).unwrap();
         let tree = self.find_tree(index.write_tree().unwrap()).unwrap();
@@ -63,7 +66,8 @@ impl TestRepo {
         match head {
             Some(ci) => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[&ci]),
             None => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[]),
-        }.unwrap();
+        }
+        .unwrap();
     }
 
     pub fn check_file(&self, filename: &str, file_present: bool, file_in_index: bool) {
@@ -134,7 +138,8 @@ impl TestEnv {
             let tree_oid = repo.index().unwrap().write_tree().unwrap();
             let tree = repo.find_tree(tree_oid).unwrap();
             let sig = repo.signature().unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[]).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
+                .unwrap();
         }
 
         TestEnv {
