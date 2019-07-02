@@ -22,6 +22,38 @@ args:
         long: bootstrap
         help: "Bootstrap the local repository"
 
+    # configuration
+    - filters:
+        short: C
+        long: filter
+        takes_value: true
+        multiple: true
+        number_of_values: 1
+        help: "Filter to apply on copied commits' messages"
+        long_help: >
+            Filter applied on the messages of copied commits.
+            Lines in the commit message that matches the filter will not
+            be copied in the message of the new commit.
+
+            Can be a regular expression. On match, the whole line will
+            be removed.
+            Multiple filters can be specified.
+
+            Examples:
+                commit message:
+                    brief
+
+                    details
+                    Refs: #15
+                    Closes: #23
+
+                $ ripit -C '^Refs' -C '^Closes'
+
+                result:
+                    brief
+
+                    details
+
     # common options shared by every action
     - verbose:
         short: v

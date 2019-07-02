@@ -35,19 +35,41 @@ fn force_checkout_head(repo: &git2::Repository) -> Result<(), git2::Error> {
     repo.checkout_head(Some(&mut opts))
 }
 
+fn filter_commit_msg(msg: &str, opts: &app::Options) -> String {
+    if opts.commit_msg_filters.len() == 0 {
+        return msg.to_owned();
+    }
+
+    let new_lines: Vec<&str> = msg
+        .lines()
+        .filter(|line| {
+            if opts.commit_msg_filters.is_match(line) {
+                if opts.verbose {
+                    println!("  Filtering out line '{}'", line);
+                }
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    new_lines.join("\n")
+}
+
 /// Cherrypick a given commit on top of HEAD, and add the ripit tag
 fn copy_commit(
     repo: &git2::Repository,
     commit: &git2::Commit,
-    verbose: bool,
+    opts: &app::Options,
 ) -> Result<(), git2::Error> {
-    if verbose {
+    if opts.verbose {
         println!("Copying commit {}...", commit.id());
     }
 
     let new_msg = format!(
         "{}\nrip-it: {}\n",
-        commit.message().unwrap_or(""),
+        filter_commit_msg(commit.message().unwrap_or(""), opts),
         commit.id()
     );
 
@@ -137,7 +159,7 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
 
     // cherry-pick every commit, and add the rip-it tag in the commits messages
     for ci in &commits {
-        copy_commit(&repo, &ci, opts.verbose)?;
+        copy_commit(&repo, &ci, opts)?;
     }
 
     Ok(())

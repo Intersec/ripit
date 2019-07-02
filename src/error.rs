@@ -8,6 +8,11 @@ pub enum Error {
     TagMissing,
     // the local repo has changes
     HasLocalChanges,
+    // invalid config provided. For the moment, only Regex errors can cause this
+    InvalidConfig {
+        field: &'static str,
+        error: regex::Error,
+    },
 }
 
 impl From<git2::Error> for Error {
@@ -29,6 +34,9 @@ impl fmt::Display for Error {
                 f,
                 "The repository contains non committed changes.\nAborted."
             ),
+            Error::InvalidConfig { field, error } => {
+                write!(f, "Invalid {} option: {}", field, error)
+            }
         }
     }
 }

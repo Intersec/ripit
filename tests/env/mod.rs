@@ -46,7 +46,7 @@ impl Deref for TestRepo {
 }
 
 impl TestRepo {
-    pub fn commit_file(&self, filename: &str, commit_msg: &str) {
+    pub fn commit_file(&self, filename: &str, commit_msg: &str) -> git2::Commit {
         let path = Path::new(self.workdir().unwrap()).join(filename);
         fs::File::create(&path)
             .unwrap()
@@ -63,7 +63,7 @@ impl TestRepo {
         };
         let sig = self.signature().unwrap();
 
-        match head {
+        let commit_oid = match head {
             Some(ci) => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[&ci]),
             None => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[]),
         }
@@ -71,6 +71,8 @@ impl TestRepo {
 
         let mut opts = git2::build::CheckoutBuilder::new();
         self.checkout_head(Some(&mut opts.force())).unwrap();
+
+        self.find_commit(commit_oid).unwrap()
     }
 
     pub fn check_file(&self, filename: &str, file_present: bool, file_in_index: bool) {

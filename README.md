@@ -52,12 +52,12 @@ $ ripit private # -b <branch> for a specific branch, 'master' is the default
 ```
 
 This command will:
-* fetch the up-to-date version of the remote's branch
-* display a list of new commits to synchronize, and ask for confirmation
-* copy the commits in the local repo
+* Fetch the up-to-date version of the remote's branch.
+* Display a list of new commits to synchronize, and ask for confirmation.
+* Copy the commits in the local repo.
 
 ## Features
 
-* bootstrap a repository with the state of another one
-* copy commits from a repository
-
+* Bootstrap a repository with the state of another one.
+* Copy commits from a repository.
+* Filter out lines in commit messages.

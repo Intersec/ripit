@@ -9,6 +9,8 @@ edition = "2018"
 git2 = "0.9"
 # Temp dir creation for tests
 tempfile = "3.0"
+# Regex support for filtering
+regex = "1.1"
 
 # Command line options handler
 [dependencies.clap]

@@ -93,3 +93,64 @@ fn test_abort_on_local_changes() {
     env.local_repo.checkout_head(Some(&mut opts)).unwrap();
     env.run_ripit_success(&["-y", "private"]);
 }
+
+/// Test filtering of commits
+#[test]
+fn test_commits_filtering() {
+    let env = env::TestEnv::new(false);
+
+    env.run_ripit_success(&["--bootstrap", "private"]);
+
+    let c1 = env.remote_repo.commit_file(
+        "a.txt",
+        "\
+brief
+
+test line 1
+Toto Test Refs
+
+tt test",
+    );
+    let c2 = env.remote_repo.commit_file(
+        "b.txt",
+        "\
+Not even a brief
+Refs:
+ Refs: b",
+    );
+    assert_eq!(env.remote_repo.count_commits(), 3); // init + 2 commits
+
+    env.run_ripit_success(&["-vy", "-C", "^Refs", "-C", "test", "private"]);
+
+    let mut revwalk = env.local_repo.revwalk().unwrap();
+    revwalk.push_head().unwrap();
+    let commits: Vec<git2::Commit> = revwalk
+        .map(|oid| env.local_repo.find_commit(oid.unwrap()).unwrap())
+        .collect();
+    assert_eq!(commits.len(), 3);
+
+    assert_eq!(
+        commits[0].message().unwrap(),
+        format!(
+            "\
+Not even a brief
+ Refs: b
+rip-it: {}
+",
+            c2.id()
+        )
+    );
+    assert_eq!(
+        commits[1].message().unwrap(),
+        format!(
+            "\
+brief
+
+Toto Test Refs
+
+rip-it: {}
+",
+            c1.id()
+        )
+    );
+}
