@@ -96,6 +96,7 @@ pub fn sync_branch_with_remote(
     remote: &str,
     branch_rev: &str,
     verbose: bool,
+    yes: bool,
 ) -> Result<(), Error> {
     // Get SHA-1 of last synced commit
     let local_branch = repo.revparse_single(branch_rev)?;
@@ -140,7 +141,7 @@ pub fn sync_branch_with_remote(
         );
     }
 
-    if !util::confirm_action() {
+    if !yes && !util::confirm_action() {
         return Ok(());
     }
 

@@ -7,6 +7,7 @@ pub struct Opts {
 
     pub bootstrap: bool,
     pub verbose: bool,
+    pub yes: bool,
 }
 
 pub fn parse_args() -> Opts {
@@ -20,6 +21,7 @@ pub fn parse_args() -> Opts {
          "Bootstrap the local repository")
         (@arg remote: +required "Name of the remote containing the commits to cherry-pick")
         (@arg verbose: -v --verbose "Print verbose logs")
+        (@arg yes: -y --yes "Automatic yes to prompts")
     )
     .get_matches();
 
@@ -29,5 +31,6 @@ pub fn parse_args() -> Opts {
         remote: matches.value_of("remote").unwrap().to_owned(),
         bootstrap: matches.is_present("bootstrap"),
         verbose: matches.is_present("verbose"),
+        yes: matches.is_present("yes"),
     }
 }

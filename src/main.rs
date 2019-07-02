@@ -16,7 +16,7 @@ fn _main() -> Result<(), error::Error> {
         sync::bootstrap_branch_with_remote(&repo, &opts.remote, &opts.branch)
     } else {
         // sync local branch with remote by cherry-picking missing commits
-        sync::sync_branch_with_remote(&repo, &opts.remote, &opts.branch, opts.verbose)
+        sync::sync_branch_with_remote(&repo, &opts.remote, &opts.branch, opts.verbose, opts.yes)
     }
 }
 
