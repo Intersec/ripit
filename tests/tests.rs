@@ -1,5 +1,8 @@
 //! Integration tests for the CLI interface of fd.
 
+use std::fs;
+use std::path::Path;
+
 mod env;
 
 /// Test that synchronization fails unless a boostrap is done
@@ -11,10 +14,10 @@ fn test_bootstrap() {
     env.remote_repo.commit_file("b.txt", "b");
     assert_eq!(env.remote_repo.count_commits(), 3); // init + 2 commits
 
-    env.run_ripit_failure(&["private"]); // missing initial commit
+    env.run_ripit_failure(&["private"], None); // missing initial commit
 
     env.local_repo.commit_file("priv", "priv");
-    env.run_ripit_failure(&["private"]); // missing ripit tag
+    env.run_ripit_failure(&["private"], None); // missing ripit tag
 
     env.run_ripit_success(&["--bootstrap", "private"]);
     assert_eq!(env.local_repo.count_commits(), 2); // priv + bootstrap
@@ -22,8 +25,7 @@ fn test_bootstrap() {
     // files from both remote commits were added
     env.local_repo.check_file("a.txt", true, true);
     env.local_repo.check_file("b.txt", true, true);
-    // file from local commit was un-indexed, but is still present on the repo.
-    env.local_repo.check_file("priv", true, false);
+    env.local_repo.check_file("priv", false, false);
 }
 
 /// Test basic syncing of a few commits
@@ -59,6 +61,35 @@ fn test_basic_sync() {
         let local_msg = local_commit.message().unwrap();
         let pattern = format!("rip-it: {}", remote_commit.id());
 
-        assert!(local_msg.find(&pattern).is_some());
+        assert!(local_msg.contains(&pattern));
     }
+}
+
+/// Test that exec is aborted if local changes are present
+#[test]
+fn test_abort_on_local_changes() {
+    let env = env::TestEnv::new(false);
+    let mut opts = git2::build::CheckoutBuilder::new();
+    opts.force();
+
+    let filename = "local.txt";
+    env.local_repo.commit_file(filename, "local");
+    let path = Path::new(env.local_repo.workdir().unwrap()).join(filename);
+
+    // bootstrap should fail due to local changes
+    fs::remove_file(&path).unwrap();
+    env.run_ripit_failure(&["--bootstrap", "private"], Some("Aborted"));
+
+    // force checkout, bootstrap should succeed
+    env.local_repo.checkout_head(Some(&mut opts)).unwrap();
+    env.remote_repo.commit_file("a.txt", "a");
+    env.run_ripit_success(&["--bootstrap", "private"]);
+
+    // sync should fail due to local changes
+    let path = Path::new(env.local_repo.workdir().unwrap()).join("a.txt");
+    fs::remove_file(&path).unwrap();
+    env.run_ripit_failure(&["private"], Some("Aborted"));
+
+    env.local_repo.checkout_head(Some(&mut opts)).unwrap();
+    env.run_ripit_success(&["-y", "private"]);
 }

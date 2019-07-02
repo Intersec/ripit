@@ -8,7 +8,7 @@ use std::process;
 use std::str;
 
 // to use to pause  the execution, so that the states of the test repos can be checked
-fn _pause() {
+pub fn _pause() {
     use std::io::Read;
 
     let mut stdout = std::io::stdout();
@@ -68,6 +68,9 @@ impl TestRepo {
             None => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[]),
         }
         .unwrap();
+
+        let mut opts = git2::build::CheckoutBuilder::new();
+        self.checkout_head(Some(&mut opts.force())).unwrap();
     }
 
     pub fn check_file(&self, filename: &str, file_present: bool, file_in_index: bool) {
@@ -151,13 +154,18 @@ impl TestEnv {
         }
     }
 
-    fn run_ripit(&self, successful: bool, args: &[&str]) {
+    fn run_ripit(&self, successful: bool, args: &[&str], err_msg: Option<&str>) {
         let mut cmd = process::Command::new(&self.ripit_exec);
         cmd.current_dir(self.local_dir.path());
         cmd.args(args);
 
         let output = cmd.output().expect("ripit command");
         println!("stdout: {}", str::from_utf8(&output.stdout).unwrap());
+
+        let stderr = str::from_utf8(&output.stderr).unwrap();
+        if let Some(msg) = err_msg {
+            assert!(stderr.contains(msg));
+        }
         println!("stderr: {}", str::from_utf8(&output.stderr).unwrap());
 
         assert!(output.status.success() == successful);
@@ -168,12 +176,12 @@ impl TestEnv {
         self.remote_repo.index().unwrap().read(true).unwrap();
     }
 
-    pub fn run_ripit_failure(&self, args: &[&str]) {
-        self.run_ripit(false, args)
+    pub fn run_ripit_failure(&self, args: &[&str], err_msg: Option<&str>) {
+        self.run_ripit(false, args, err_msg)
     }
 
     pub fn run_ripit_success(&self, args: &[&str]) {
-        self.run_ripit(true, args)
+        self.run_ripit(true, args, None)
     }
 }
 
