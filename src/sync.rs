@@ -1,5 +1,5 @@
-use crate::util;
 use crate::error::Error;
+use crate::util;
 
 /// Build a revwalk to iterate from a commit (excluded), up to the branch's last commit
 fn build_revwalk<'a>(
@@ -99,12 +99,21 @@ pub fn sync_branch_with_remote(
 
     // Build revwalk from specified commit up to last commit in branch in remote
     let revwalk = build_revwalk(&repo, &commit, &remote_branch)?;
-
-    // print out a summary of what would be cherry-picked
-    print!("Commits to cherry-pick:\n\n");
+    let mut commits = vec![];
     for oid in revwalk {
-        let ci = repo.find_commit(oid?)?;
+        commits.push(repo.find_commit(oid?)?);
+    }
 
+    if commits.len() == 0 {
+        println!(
+            "Nothing to synchronize, already up to date with {}/{}",
+            remote, branch_rev
+        );
+        return Ok(());
+    }
+
+    print!("Commits to cherry-pick:\n\n");
+    for ci in &commits {
         print!(
             "Commit {id}\n \
              Author: {author}\n \
@@ -120,10 +129,7 @@ pub fn sync_branch_with_remote(
     }
 
     // cherry-pick every commit, and add the rip-it tag in the commits messages
-    let revwalk = build_revwalk(&repo, &commit, &remote_branch)?;
-    for oid in revwalk {
-        let ci = repo.find_commit(oid?)?;
-
+    for ci in &commits {
         cherrypick(&repo, &ci)?;
     }
 
@@ -150,7 +156,7 @@ fn commit_bootstrap<'a>(
         Ok(head) => {
             let oid = head.target().unwrap();
             Some(repo.find_commit(oid)?)
-        },
+        }
         Err(_) => None,
     };
 
