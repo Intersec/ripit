@@ -34,14 +34,14 @@ fn _main() -> Result<(), error::Error> {
     check_local_diff(&repo)?;
 
     // fetch last commits in remote
-    sync::update_remote(&repo, &opts.remote, &opts.branch, opts.verbose)?;
+    sync::update_remote(&repo, &opts)?;
 
     if opts.bootstrap {
         // bootstrap the branch in the local repo with the state of the branch in the remote repo
-        sync::bootstrap_branch_with_remote(&repo, &opts.remote, &opts.branch)
+        sync::bootstrap_branch_with_remote(&repo, &opts)
     } else {
         // sync local branch with remote by cherry-picking missing commits
-        sync::sync_branch_with_remote(&repo, &opts.remote, &opts.branch, opts.verbose, opts.yes)
+        sync::sync_branch_with_remote(&repo, &opts)
     }
 }
 

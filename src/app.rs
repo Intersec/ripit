@@ -1,6 +1,6 @@
 use clap::clap_app;
 
-pub struct Opts {
+pub struct Options {
     pub repo: String,
     pub branch: String,
     pub remote: String,
@@ -10,7 +10,7 @@ pub struct Opts {
     pub yes: bool,
 }
 
-pub fn parse_args() -> Opts {
+pub fn parse_args() -> Options {
     let matches = clap_app!(ripit =>
         (version: "0.1")
         (@arg repo: -r --repo +takes_value
@@ -25,7 +25,7 @@ pub fn parse_args() -> Opts {
     )
     .get_matches();
 
-    Opts {
+    Options {
         repo: matches.value_of("repo").unwrap_or(".").to_owned(),
         branch: matches.value_of("branch").unwrap_or("master").to_owned(),
         remote: matches.value_of("remote").unwrap().to_owned(),

@@ -1,3 +1,4 @@
+use crate::app;
 use crate::error::Error;
 use crate::util;
 
@@ -16,18 +17,13 @@ fn build_revwalk<'a>(
 
 // {{{ Fetch remote
 
-pub fn update_remote(
-    repo: &git2::Repository,
-    remote_name: &str,
-    branch_rev: &str,
-    verbose: bool,
-) -> Result<(), git2::Error> {
-    let mut remote = repo.find_remote(remote_name)?;
+pub fn update_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(), git2::Error> {
+    let mut remote = repo.find_remote(&opts.remote)?;
 
-    if verbose {
-        println!("Fetch branch {} in remote {}...", branch_rev, remote_name);
+    if opts.verbose {
+        println!("Fetch branch {} in remote {}...", opts.branch, opts.remote);
     }
-    remote.fetch(&[&branch_rev], None, None)
+    remote.fetch(&[&opts.branch], None, None)
 }
 
 // }}}
@@ -91,20 +87,14 @@ fn retrieve_ripit_tag(commit: &git2::Commit) -> Option<String> {
 }
 
 /// Sync the local repository with the new changes from the given remote
-pub fn sync_branch_with_remote(
-    repo: &git2::Repository,
-    remote: &str,
-    branch_rev: &str,
-    verbose: bool,
-    yes: bool,
-) -> Result<(), Error> {
+pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(), Error> {
     // Get SHA-1 of last synced commit
-    let local_branch = repo.revparse_single(branch_rev)?;
+    let local_branch = repo.revparse_single(&opts.branch)?;
     let sha1 = match retrieve_ripit_tag(&local_branch.peel_to_commit()?) {
         Some(sha1) => sha1,
         None => return Err(Error::TagMissing),
     };
-    if verbose {
+    if opts.verbose {
         println!("Found ripit tag, last synced commit was {}.", sha1);
     }
 
@@ -112,7 +102,7 @@ pub fn sync_branch_with_remote(
     let commit = repo.find_commit(git2::Oid::from_str(&sha1)?)?;
 
     // Get the branch last commit in the remote
-    let remote_branch = repo.revparse_single(&format!("{}/{}", remote, branch_rev))?;
+    let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, opts.branch))?;
 
     // Build revwalk from specified commit up to last commit in branch in remote
     let revwalk = build_revwalk(&repo, &commit, &remote_branch)?;
@@ -124,7 +114,7 @@ pub fn sync_branch_with_remote(
     if commits.len() == 0 {
         println!(
             "Nothing to synchronize, already up to date with {}/{}.",
-            remote, branch_rev
+            opts.remote, opts.branch
         );
         return Ok(());
     }
@@ -141,13 +131,13 @@ pub fn sync_branch_with_remote(
         );
     }
 
-    if !yes && !util::confirm_action() {
+    if !opts.yes && !util::confirm_action() {
         return Ok(());
     }
 
     // cherry-pick every commit, and add the rip-it tag in the commits messages
     for ci in &commits {
-        copy_commit(&repo, &ci, verbose)?;
+        copy_commit(&repo, &ci, opts.verbose)?;
     }
 
     Ok(())
@@ -204,15 +194,14 @@ fn commit_bootstrap<'a>(
 /// Following this bootstrap, synchronisation between the two repos will be possible.
 pub fn bootstrap_branch_with_remote(
     repo: &git2::Repository,
-    remote: &str,
-    branch_rev: &str,
+    opts: &app::Options,
 ) -> Result<(), Error> {
     // Get the branch last commit in the remote
-    let remote_branch = repo.revparse_single(&format!("{}/{}", remote, branch_rev))?;
+    let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, opts.branch))?;
     let remote_commit = remote_branch.peel_to_commit()?;
 
     // build the bootstrap commit from the state of this commit
-    let commit = commit_bootstrap(&repo, &remote_commit, remote)?;
+    let commit = commit_bootstrap(&repo, &remote_commit, &opts.remote)?;
     println!("Bootstrap commit {} created.", commit.id());
 
     Ok(())
