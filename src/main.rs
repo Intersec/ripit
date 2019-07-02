@@ -4,23 +4,19 @@ mod sync;
 mod util;
 
 fn _main() -> Result<(), error::Error> {
-    let matches = app::parse_args();
+    let opts = app::parse_args();
 
-    let repo_path = matches.value_of("REPO").unwrap_or(".");
-    let repo = git2::Repository::open(repo_path)?;
-
-    let branch_rev = matches.value_of("BRANCH").unwrap_or("master");
-    let remote = matches.value_of("REMOTE").unwrap();
+    let repo = git2::Repository::open(opts.repo)?;
 
     // fetch last commits in remote
-    sync::update_remote(&repo, &remote, &branch_rev)?;
+    sync::update_remote(&repo, &opts.remote, &opts.branch, opts.verbose)?;
 
-    if matches.is_present("BOOTSTRAP") {
+    if opts.bootstrap {
         // bootstrap the branch in the local repo with the state of the branch in the remote repo
-        sync::bootstrap_branch_with_remote(&repo, &remote, &branch_rev)
+        sync::bootstrap_branch_with_remote(&repo, &opts.remote, &opts.branch)
     } else {
         // sync local branch with remote by cherry-picking missing commits
-        sync::sync_branch_with_remote(&repo, &remote, &branch_rev)
+        sync::sync_branch_with_remote(&repo, &opts.remote, &opts.branch, opts.verbose)
     }
 }
 

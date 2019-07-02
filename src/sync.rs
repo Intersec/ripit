@@ -20,10 +20,13 @@ pub fn update_remote(
     repo: &git2::Repository,
     remote_name: &str,
     branch_rev: &str,
+    verbose: bool,
 ) -> Result<(), git2::Error> {
     let mut remote = repo.find_remote(remote_name)?;
 
-    println!("fetch branch {} in remote {}...", branch_rev, remote_name);
+    if verbose {
+        println!("Fetch branch {} in remote {}...", branch_rev, remote_name);
+    }
     remote.fetch(&[&branch_rev], None, None)
 }
 
@@ -37,7 +40,15 @@ fn force_checkout_head(repo: &git2::Repository) -> Result<(), git2::Error> {
 }
 
 /// Cherrypick a given commit on top of HEAD, and add the ripit tag
-fn cherrypick(repo: &git2::Repository, commit: &git2::Commit) -> Result<(), git2::Error> {
+fn copy_commit(
+    repo: &git2::Repository,
+    commit: &git2::Commit,
+    verbose: bool,
+) -> Result<(), git2::Error> {
+    if verbose {
+        println!("Copying commit {}...", commit.id());
+    }
+
     let new_msg = format!(
         "{}\nrip-it: {}\n",
         commit.message().unwrap_or(""),
@@ -47,7 +58,7 @@ fn cherrypick(repo: &git2::Repository, commit: &git2::Commit) -> Result<(), git2
     // commit the changes
     let head_oid = repo.head()?.target().unwrap();
     let head = repo.find_commit(head_oid)?;
-    repo.commit(
+    let ci_oid = repo.commit(
         Some("HEAD"),
         &commit.author(),
         &commit.committer(),
@@ -55,6 +66,8 @@ fn cherrypick(repo: &git2::Repository, commit: &git2::Commit) -> Result<(), git2
         &commit.tree()?,
         &[&head],
     )?;
+
+    println!("Created commit {}.", repo.find_commit(ci_oid)?.id());
 
     // make the working directory match HEAD
     force_checkout_head(&repo)?;
@@ -82,6 +95,7 @@ pub fn sync_branch_with_remote(
     repo: &git2::Repository,
     remote: &str,
     branch_rev: &str,
+    verbose: bool,
 ) -> Result<(), Error> {
     // Get SHA-1 of last synced commit
     let local_branch = repo.revparse_single(branch_rev)?;
@@ -89,7 +103,9 @@ pub fn sync_branch_with_remote(
         Some(sha1) => sha1,
         None => return Err(Error::TagMissing),
     };
-    println!("found sha-1 {}", sha1);
+    if verbose {
+        println!("Found ripit tag, last synced commit was {}.", sha1);
+    }
 
     // Get the commit related to this SHA-1
     let commit = repo.find_commit(git2::Oid::from_str(&sha1)?)?;
@@ -106,7 +122,7 @@ pub fn sync_branch_with_remote(
 
     if commits.len() == 0 {
         println!(
-            "Nothing to synchronize, already up to date with {}/{}",
+            "Nothing to synchronize, already up to date with {}/{}.",
             remote, branch_rev
         );
         return Ok(());
@@ -130,7 +146,7 @@ pub fn sync_branch_with_remote(
 
     // cherry-pick every commit, and add the rip-it tag in the commits messages
     for ci in &commits {
-        cherrypick(&repo, &ci)?;
+        copy_commit(&repo, &ci, verbose)?;
     }
 
     Ok(())
@@ -196,7 +212,7 @@ pub fn bootstrap_branch_with_remote(
 
     // build the bootstrap commit from the state of this commit
     let commit = commit_bootstrap(&repo, &remote_commit, remote)?;
-    println!("bootstrap commit {} created", commit.id());
+    println!("Bootstrap commit {} created.", commit.id());
 
     Ok(())
 }
