@@ -151,16 +151,10 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
         return Ok(());
     }
 
-    print!("Commits to cherry-pick:\n\n");
+    print!("Commits to cherry-pick:\n");
     for ci in &commits {
-        print!(
-            "Commit {id}\n \
-             Author: {author}\n \
-             {msg}\n\n",
-            id = ci.id(),
-            author = ci.author(),
-            msg = ci.message().unwrap_or("")
-        );
+        print!("  Commit {id}\n    {author}\n    {summary}\n\n",
+               id=ci.id(), author=ci.author(), summary=ci.summary().unwrap_or(""));
     }
 
     if !opts.yes && !util::confirm_action() {
