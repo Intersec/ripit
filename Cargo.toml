@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 # Rust bindings on libgit2
-git2 = "0.9"
+git2 = "~0.9.2"
 # Temp dir creation for tests
 tempfile = "3.0"
 # Regex support for filtering

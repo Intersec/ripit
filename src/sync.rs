@@ -73,15 +73,25 @@ fn copy_commit(
         commit.id()
     );
 
+    // cherrypick changes on top of HEAD
+    let mut cherrypick_opts = git2::CherrypickOptions::new();
+    if commit.parents().len() > 1 {
+        // TODO: find the right mainline
+        cherrypick_opts.mainline(1);
+    }
+    repo.cherrypick(&commit, Some(&mut cherrypick_opts))?;
+
     // commit the changes
     let head_oid = repo.head()?.target().unwrap();
     let head = repo.find_commit(head_oid)?;
+    let tree_oid = repo.index()?.write_tree()?;
+    let tree = repo.find_tree(tree_oid)?;
     let ci_oid = repo.commit(
         Some("HEAD"),
         &commit.author(),
         &commit.committer(),
         &new_msg,
-        &commit.tree()?,
+        &tree,
         &[&head],
     )?;
 
