@@ -8,11 +8,6 @@ pub enum Error {
     TagMissing,
     // the local repo has changes
     HasLocalChanges,
-    // invalid config provided. For the moment, only Regex errors can cause this
-    InvalidConfig {
-        field: &'static str,
-        error: regex::Error,
-    },
     // the parent of a commit to sync cannot be mapped to a commit in the local repo
     UnknownParent {
         commit_id: git2::Oid,
@@ -21,6 +16,22 @@ pub enum Error {
     // A synchronization caused conflicts in the index. The user has to solve them
     HasConflicts {
         summary: String,
+    },
+
+    // error when opening the config file
+    FailedOpenCfg {
+        path: String,
+        error: std::io::Error,
+    },
+    // error when parsing the config file
+    FailedParseCfg {
+        path: String,
+        error: serde_yaml::Error,
+    },
+    // invalid config provided. For the moment, only Regex errors can cause this
+    InvalidConfig {
+        field: &'static str,
+        error: regex::Error,
     },
 }
 
@@ -43,9 +54,6 @@ impl fmt::Display for Error {
                 f,
                 "The repository contains non committed changes.\nAborted."
             ),
-            Error::InvalidConfig { field, error } => {
-                write!(f, "Invalid {} option: {}", field, error)
-            }
             Error::UnknownParent {
                 commit_id,
                 parent_id,
@@ -62,6 +70,15 @@ impl fmt::Display for Error {
                  then run the synchronization again.",
                 summary
             ),
+            Error::FailedOpenCfg { path, error } => {
+                write!(f, "Cannot open configuration file {}: {}", path, error)
+            }
+            Error::FailedParseCfg { path, error } => {
+                write!(f, "Invalid configuration file {}: {}", path, error)
+            }
+            Error::InvalidConfig { field, error } => {
+                write!(f, "Invalid {} option: {}", field, error)
+            }
         }
     }
 }

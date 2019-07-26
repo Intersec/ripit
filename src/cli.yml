@@ -2,20 +2,15 @@ name: ripit
 version: "0.1"
 about: Copy commits between git repositories
 args:
-    # git options
-    - repo:
-        short: r
-        long: repo
-        takes_value: true
-        help: "Path to the repository (default: current directory)"
-    - branch:
-        short: b
-        long: branch
-        takes_value: true
-        help: "Branch to synchronize (default: master)"
-    - remote:
+    # configuration
+    - config_file:
         required: true
-        help: "Name of the remote containing the commits to copy"
+        help: "Path to configuration file"
+        long_help: >
+            A configuration file containing parameters related to the git
+            repository is required.
+            To create a new one, duplicate and modify config-template.yml,
+            which contains descriptions of all possible options.
 
     # type of action
     - bootstrap:
@@ -37,38 +32,6 @@ args:
             In that case, we want to cherry-pick the commits brought by
             the merge (or in this context, "uproot" them).
             This behavior can be activated with this flag.
-
-    # configuration
-    - filters:
-        short: C
-        long: filter
-        takes_value: true
-        multiple: true
-        number_of_values: 1
-        help: "Filter to apply on copied commits' messages"
-        long_help: >
-            Filter applied on the messages of copied commits.
-            Lines in the commit message that matches the filter will not
-            be copied in the message of the new commit.
-
-            Can be a regular expression. On match, the whole line will
-            be removed.
-            Multiple filters can be specified.
-
-            Examples:
-                commit message:
-                    brief
-
-                    details
-                    Refs: #15
-                    Closes: #23
-
-                $ ripit -C '^Refs' -C '^Closes'
-
-                result:
-                    brief
-
-                    details
 
     # common options shared by every action
     - quiet:

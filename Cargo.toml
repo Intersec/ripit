@@ -11,6 +11,9 @@ git2 = "~0.9.2"
 tempfile = "3.0"
 # Regex support for filtering
 regex = "1.1"
+# Yaml deserializer for config file
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.8"
 
 # Command line options handler
 [dependencies.clap]

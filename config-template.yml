@@ -1,0 +1,23 @@
+# Path to the git repository
+# If unset, the current directory of the execution is used.
+#repo: /path/to/the/repo
+
+# Name of the remote containing the commits to copy
+#remote: private
+
+# Branch to synchronize
+# If unset, 'master' is used
+#branch: master
+
+# Filter applied on the messages of copied commits.
+# Lines in the commit message that matches the filter will not
+# be copied in the message of the new commit.
+# 
+# Can be a regular expression. On match, the whole line will
+# be removed.
+# Multiple filters can be specified.
+#filters:
+#  - "^Closes:"
+#  - "^Bug:"
+#  - "^Issue:"
+#  - "^Refs:"

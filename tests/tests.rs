@@ -14,12 +14,12 @@ fn test_bootstrap() {
     env.remote_repo.commit_file("b.txt", "b");
     assert_eq!(env.remote_repo.count_commits(), 3); // init + 2 commits
 
-    env.run_ripit_failure(&["private"], None); // missing initial commit
+    env.run_ripit_failure(&[], None); // missing initial commit
 
     env.local_repo.commit_file("priv", "priv");
-    env.run_ripit_failure(&["private"], None); // missing ripit tag
+    env.run_ripit_failure(&[], None); // missing ripit tag
 
-    env.run_ripit_success(&["--bootstrap", "private"]);
+    env.run_ripit_success(&["--bootstrap"]);
     assert_eq!(env.local_repo.count_commits(), 2); // priv + bootstrap
 
     // files from both remote commits were added
@@ -33,13 +33,13 @@ fn test_bootstrap() {
 fn test_basic_sync() {
     let env = env::TestEnv::new(false);
 
-    env.run_ripit_success(&["--bootstrap", "private"]);
+    env.run_ripit_success(&["--bootstrap"]);
 
     env.remote_repo.commit_file("a.txt", "a");
     env.remote_repo.commit_file("b.txt", "b");
     assert_eq!(env.remote_repo.count_commits(), 3); // init + 2 commits
 
-    env.run_ripit_success(&["-y", "private"]); // missing initial commit
+    env.run_ripit_success(&["-y"]); // missing initial commit
 
     // head tracks master
     let local_head = env.local_repo.head().unwrap();
@@ -51,7 +51,7 @@ fn test_basic_sync() {
     env.local_repo.check_file("b.txt", true, true);
 
     env.remote_repo.commit_file("c.txt", "c");
-    env.run_ripit_success(&["-y", "private"]); // missing initial commit
+    env.run_ripit_success(&["-y"]); // missing initial commit
     env.local_repo.check_file("c.txt", true, true);
 
     // head tracks master
@@ -86,20 +86,20 @@ fn test_abort_on_local_changes() {
 
     // bootstrap should fail due to local changes
     fs::remove_file(&path).unwrap();
-    env.run_ripit_failure(&["--bootstrap", "private"], Some("Aborted"));
+    env.run_ripit_failure(&["--bootstrap"], Some("Aborted"));
 
     // force checkout, bootstrap should succeed
     env.local_repo.force_checkout_head();
     env.remote_repo.commit_file("a.txt", "a");
-    env.run_ripit_success(&["--bootstrap", "private"]);
+    env.run_ripit_success(&["--bootstrap"]);
 
     // sync should fail due to local changes
     let path = Path::new(env.local_repo.workdir().unwrap()).join("a.txt");
     fs::remove_file(&path).unwrap();
-    env.run_ripit_failure(&["private"], Some("Aborted"));
+    env.run_ripit_failure(&[], Some("Aborted"));
 
     env.local_repo.force_checkout_head();
-    env.run_ripit_success(&["-y", "private"]);
+    env.run_ripit_success(&["-y"]);
 }
 
 /// Test filtering of commits
@@ -107,7 +107,7 @@ fn test_abort_on_local_changes() {
 fn test_commits_filtering() {
     let env = env::TestEnv::new(false);
 
-    env.run_ripit_success(&["--bootstrap", "private"]);
+    env.run_ripit_success(&["--bootstrap"]);
 
     let c1 = env.remote_repo.commit_file(
         "a.txt",
@@ -128,7 +128,7 @@ Refs:
     );
     assert_eq!(env.remote_repo.count_commits(), 3); // init + 2 commits
 
-    env.run_ripit_success(&["-y", "-C", "^Refs", "-C", "test", "private"]);
+    env.run_ripit_success(&["-y"]);
 
     let mut revwalk = env.local_repo.revwalk().unwrap();
     revwalk.push_head().unwrap();
@@ -173,12 +173,12 @@ fn test_merge_sync() {
     // start syncing from c4
     let c4 = env.remote_repo.revparse_single("c4").unwrap();
     env.remote_repo.reset_hard(&c4);
-    env.run_ripit_success(&["--bootstrap", "private"]);
+    env.run_ripit_success(&["--bootstrap"]);
 
     // then sync c8: should reproduce the merge commit
     let c8 = env.remote_repo.revparse_single("c8").unwrap();
     env.remote_repo.reset_hard(&c8);
-    env.run_ripit_success(&["-y", "private"]);
+    env.run_ripit_success(&["-y"]);
 
     env.local_repo.check_file("c4", true, true);
     env.local_repo.check_file("c5", true, true);
@@ -215,18 +215,15 @@ fn test_uproot_sync() {
     // start syncing from c5
     let c5 = env.remote_repo.revparse_single("c5").unwrap();
     env.remote_repo.reset_hard(&c5);
-    env.run_ripit_success(&["--bootstrap", "private"]);
+    env.run_ripit_success(&["--bootstrap"]);
 
     // then try to sync c8: should fail because of unknown parent
     let c8 = env.remote_repo.revparse_single("c8").unwrap();
     env.remote_repo.reset_hard(&c8);
-    env.run_ripit_failure(
-        &["-y", "private"],
-        Some("cannot be found in the local repository"),
-    );
+    env.run_ripit_failure(&["-y"], Some("cannot be found in the local repository"));
 
     // sync c8 with uprooting, should work
-    env.run_ripit_success(&["-yu", "private"]);
+    env.run_ripit_success(&["-yu"]);
 
     let head_tgt = env.local_repo.head().unwrap().target().unwrap();
     let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
@@ -259,13 +256,13 @@ fn test_uproot_sync_with_conflicts() {
     // start syncing from c9
     let c9 = env.remote_repo.revparse_single("c9").unwrap();
     env.remote_repo.reset_hard(&c9);
-    env.run_ripit_success(&["--bootstrap", "private"]);
+    env.run_ripit_success(&["--bootstrap"]);
 
     // then sync c10: should try to reproduce the merge by cherry-picking the unknown commits.
     // As there is a conflict, the sync should fail
     let c10 = env.remote_repo.revparse_single("c10").unwrap();
     env.remote_repo.reset_hard(&c10);
-    env.run_ripit_failure(&["-yu", "private"], Some("due to conflicts"));
+    env.run_ripit_failure(&["-yu"], Some("due to conflicts"));
 
     // Resolve conflict and do a commit
     env.local_repo.resolve_conflict_and_commit("c12");
@@ -277,7 +274,7 @@ fn test_uproot_sync_with_conflicts() {
 
     // Go-on with the synchronization, now that the conflict is
     // solved.
-    env.run_ripit_success(&["-yu", "private"]);
+    env.run_ripit_success(&["-yu"]);
 
     let head_tgt = env.local_repo.head().unwrap().target().unwrap();
     let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
@@ -320,12 +317,12 @@ fn test_uproot_merge() {
     // start syncing from c2
     let c2 = env.remote_repo.revparse_single("c2").unwrap();
     env.remote_repo.reset_hard(&c2);
-    env.run_ripit_success(&["--bootstrap", "private"]);
+    env.run_ripit_success(&["--bootstrap"]);
 
     // then sync c5, should uproot C4 which is a merge commit
     let c5 = env.remote_repo.revparse_single("c5").unwrap();
     env.remote_repo.reset_hard(&c5);
-    env.run_ripit_success(&["-yu", "private"]);
+    env.run_ripit_success(&["-yu"]);
 
     let head_tgt = env.local_repo.head().unwrap().target().unwrap();
     let head_ci = env.local_repo.find_commit(head_tgt).unwrap();

@@ -194,6 +194,8 @@ pub struct TestEnv {
     // the git repo holding commits to sync
     pub remote_repo: TestRepo,
 
+    cfg_path: String,
+
     // path to ripit executable
     ripit_exec: PathBuf,
 }
@@ -236,11 +238,27 @@ impl TestEnv {
                 .unwrap();
         }
 
+        let cfg_path = local_dir.path().join("cfg.yml");
+        let cfg = format!(
+            "\
+path: {}
+remote: private
+filters:
+  - ^Refs
+  - test",
+            local_dir.path().to_str().unwrap()
+        );
+        fs::File::create(&cfg_path)
+            .unwrap()
+            .write_all(cfg.as_bytes())
+            .unwrap();
+
         TestEnv {
             local_dir,
             local_repo,
             _remote_dir: remote_dir,
             remote_repo,
+            cfg_path: cfg_path.to_str().unwrap().to_owned(),
             ripit_exec: find_ripit_exec(),
         }
     }
@@ -316,6 +334,9 @@ impl TestEnv {
     }
 
     fn run_ripit(&self, successful: bool, args: &[&str], err_msg: Option<&str>) {
+        let mut args = args.to_vec();
+        args.push(&self.cfg_path);
+
         let mut cmd = process::Command::new(&self.ripit_exec);
         cmd.current_dir(self.local_dir.path());
         cmd.args(args);
