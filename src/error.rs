@@ -13,6 +13,11 @@ pub enum Error {
         field: &'static str,
         error: regex::Error,
     },
+    // the parent of a commit to sync cannot be mapped to a commit in the local repo
+    UnknownParent {
+        commit_id: git2::Oid,
+        parent_id: git2::Oid,
+    },
 }
 
 impl From<git2::Error> for Error {
@@ -36,6 +41,10 @@ impl fmt::Display for Error {
             ),
             Error::InvalidConfig { field, error } => {
                 write!(f, "Invalid {} option: {}", field, error)
+            }
+            Error::UnknownParent { commit_id, parent_id } => {
+                write!(f, "Cannot synchronize commit {}: its parent {} cannot be found in the \
+                       local repository", commit_id, parent_id)
             }
         }
     }

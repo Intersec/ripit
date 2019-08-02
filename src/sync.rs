@@ -1,6 +1,7 @@
 use crate::app;
 use crate::error::Error;
 use crate::util;
+use std::collections::HashMap;
 
 /// Build a revwalk to iterate from a commit (excluded), up to the branch's last commit
 fn build_revwalk<'a>(
@@ -24,6 +25,50 @@ pub fn update_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(),
         println!("Fetch branch {} in remote {}...", opts.branch, opts.remote);
     }
     remote.fetch(&[&opts.branch], None, None)
+}
+
+// }}}
+// {{{ Build commits map */
+/// Parse the commit message to retrieve the SHA-1 stored as a ripit tag
+///
+/// If the commit message contains the string "rip-it: <sha-1>", the sha-1 is returned
+fn retrieve_ripit_tag(commit: &git2::Commit) -> Option<String> {
+    let msg = commit.message()?;
+    let tag_index = msg.find("rip-it: ")?;
+    let sha1_start = tag_index + 8;
+
+    if msg.len() >= sha1_start + 40 {
+        Some(msg[(sha1_start)..(sha1_start + 40)].to_owned())
+    } else {
+        None
+    }
+}
+
+fn build_commits_map<'a>(
+    repo: &'a git2::Repository,
+    last_commit: &git2::Commit,
+) -> Result<HashMap<git2::Oid, git2::Commit<'a>>, Error> {
+    let mut map = HashMap::new();
+
+    // build revwalk from the first commit of the repo up to the provided commit
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push(last_commit.id())?;
+
+    for oid in revwalk {
+        let commit = repo.find_commit(oid?)?;
+
+        // a commit missing a tag could be an error too. By ignoring it, it will lead to errors
+        // if it is a parent of a commit to sync.
+        let tag = match retrieve_ripit_tag(&commit) {
+            Some(tag) => tag,
+            None => continue,
+        };
+        let remote_oid = git2::Oid::from_str(&tag)?;
+
+        map.insert(remote_oid, commit);
+    }
+
+    Ok(map)
 }
 
 // }}}
@@ -58,11 +103,12 @@ fn filter_commit_msg(msg: &str, opts: &app::Options) -> String {
 }
 
 /// Cherrypick a given commit on top of HEAD, and add the ripit tag
-fn copy_commit(
-    repo: &git2::Repository,
+fn copy_commit<'a>(
+    repo: &'a git2::Repository,
     commit: &git2::Commit,
+    commits_map: &HashMap<git2::Oid, git2::Commit>,
     opts: &app::Options,
-) -> Result<(), git2::Error> {
+) -> Result<git2::Commit<'a>, Error> {
     if opts.verbose {
         println!("Copying commit {}...", commit.id());
     }
@@ -72,6 +118,25 @@ fn copy_commit(
         filter_commit_msg(commit.message().unwrap_or(""), opts),
         commit.id()
     );
+
+    // Find parent of the commit in local repo
+    if commit.parent_count() > 1 {
+        println!("Merges are not handled yet! Syncing from first parent only");
+    }
+    let parent_id = commit.parent_id(0)?;
+    let local_parent = match commits_map.get(&parent_id) {
+        Some(parent_ci) => parent_ci,
+        None => {
+            return Err(Error::UnknownParent {
+                commit_id: commit.id(),
+                parent_id,
+            })
+        }
+    };
+
+    // checkout parent, then cherrypick on top of it
+    repo.set_head_detached(local_parent.id())?;
+    force_checkout_head(&repo)?;
 
     // cherrypick changes on top of HEAD
     let mut cherrypick_opts = git2::CherrypickOptions::new();
@@ -95,34 +160,30 @@ fn copy_commit(
         &[&head],
     )?;
 
-    println!("Created commit {}.", repo.find_commit(ci_oid)?.id());
+    let new_commit = repo.find_commit(ci_oid)?;
+    println!("Created commit {}.", new_commit.id());
 
     // make the working directory match HEAD
     force_checkout_head(&repo)?;
 
-    Ok(())
-}
-
-/// Parse the commit message to retrieve the SHA-1 stored as a ripit tag
-///
-/// If the commit message contains the string "rip-it: <sha-1>", the sha-1 is returned
-fn retrieve_ripit_tag(commit: &git2::Commit) -> Option<String> {
-    let msg = commit.message()?;
-    let tag_index = msg.find("rip-it: ")?;
-    let sha1_start = tag_index + 8;
-
-    if msg.len() >= sha1_start + 40 {
-        Some(msg[(sha1_start)..(sha1_start + 40)].to_owned())
-    } else {
-        None
-    }
+    Ok(new_commit)
 }
 
 /// Sync the local repository with the new changes from the given remote
 pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(), Error> {
+    let local_commit = repo.revparse_single(&opts.branch)?.peel_to_commit()?;
+
+    // Build map of remote commit sha-1 => local commit
+    //
+    // This is used to find the parents of each commits to sync, and thus properly
+    // recreate the same topology.
+    // FIXME: we really should not do this on every execution. We should either build a database,
+    // or have a "daemon" behavior. This is broken because commits not directly addressable from
+    // the branch may be synced but won't be remapped in this map.
+    let mut commits_map = build_commits_map(repo, &local_commit)?;
+
     // Get SHA-1 of last synced commit
-    let local_branch = repo.revparse_single(&opts.branch)?;
-    let sha1 = match retrieve_ripit_tag(&local_branch.peel_to_commit()?) {
+    let sha1 = match retrieve_ripit_tag(&local_commit) {
         Some(sha1) => sha1,
         None => return Err(Error::TagMissing),
     };
@@ -151,10 +212,14 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
         return Ok(());
     }
 
-    print!("Commits to cherry-pick:\n");
+    print!("Commits to synchronize:\n");
     for ci in &commits {
-        print!("  Commit {id}\n    {author}\n    {summary}\n\n",
-               id=ci.id(), author=ci.author(), summary=ci.summary().unwrap_or(""));
+        print!(
+            "  Commit {id}\n    {author}\n    {summary}\n\n",
+            id = ci.id(),
+            author = ci.author(),
+            summary = ci.summary().unwrap_or("")
+        );
     }
 
     if !opts.yes && !util::confirm_action() {
@@ -163,8 +228,13 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
 
     // cherry-pick every commit, and add the rip-it tag in the commits messages
     for ci in &commits {
-        copy_commit(&repo, &ci, opts)?;
+        let copied_ci = copy_commit(&repo, &ci, &commits_map, opts)?;
+
+        // add mapping for this new pair
+        commits_map.insert(ci.id(), copied_ci);
     }
+
+    /* FIXME: we should update the local branch ref too */
 
     Ok(())
 }
