@@ -69,8 +69,6 @@ fn test_basic_sync() {
 #[test]
 fn test_abort_on_local_changes() {
     let env = env::TestEnv::new(false);
-    let mut opts = git2::build::CheckoutBuilder::new();
-    opts.force();
 
     let filename = "local.txt";
     env.local_repo.commit_file(filename, "local");
@@ -81,7 +79,7 @@ fn test_abort_on_local_changes() {
     env.run_ripit_failure(&["--bootstrap", "private"], Some("Aborted"));
 
     // force checkout, bootstrap should succeed
-    env.local_repo.checkout_head(Some(&mut opts)).unwrap();
+    env.local_repo.force_checkout_head();
     env.remote_repo.commit_file("a.txt", "a");
     env.run_ripit_success(&["--bootstrap", "private"]);
 
@@ -90,7 +88,7 @@ fn test_abort_on_local_changes() {
     fs::remove_file(&path).unwrap();
     env.run_ripit_failure(&["private"], Some("Aborted"));
 
-    env.local_repo.checkout_head(Some(&mut opts)).unwrap();
+    env.local_repo.force_checkout_head();
     env.run_ripit_success(&["-y", "private"]);
 }
 
@@ -153,4 +151,50 @@ rip-it: {}
             c1.id()
         )
     );
+}
+
+/// Test syncing of a merge commit
+#[test]
+fn test_merge_sync() {
+    let env = env::TestEnv::new(false);
+    env.setup_branches();
+
+    // start syncing from c4
+    let c4 = env.remote_repo.revparse_single("c4").unwrap();
+    env.remote_repo
+        .reset(&c4, git2::ResetType::Hard, None)
+        .unwrap();
+    env.run_ripit_success(&["--bootstrap", "private"]);
+
+    // then sync c8: should reproduce the merge commit
+    let c8 = env.remote_repo.revparse_single("c8").unwrap();
+    env.remote_repo
+        .reset(&c8, git2::ResetType::Hard, None)
+        .unwrap();
+    env.run_ripit_success(&["-y", "private"]);
+
+    env.local_repo.check_file("c4", true, true);
+    env.local_repo.check_file("c5", true, true);
+    env.local_repo.check_file("c6", true, true);
+    env.local_repo.check_file("c7", true, true);
+
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+
+    assert!(head_ci.summary().unwrap().contains("c8"));
+    let parents: Vec<git2::Commit> = head_ci.parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("c5"));
+    assert!(parents[1].summary().unwrap().contains("c7"));
+
+    let parents: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("c6"));
+
+    let parents: Vec<git2::Commit> = parents[0].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0]
+        .summary()
+        .unwrap()
+        .contains("Bootstrap repository"));
 }

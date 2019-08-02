@@ -120,35 +120,33 @@ fn copy_commit<'a>(
     );
 
     // Find parent of the commit in local repo
-    if commit.parent_count() > 1 {
-        println!("Merges are not handled yet! Syncing from first parent only");
+    let mut local_parents = Vec::new();
+    for parent_id in commit.parent_ids() {
+        local_parents.push(match commits_map.get(&parent_id) {
+            Some(parent_ci) => parent_ci,
+            None => {
+                return Err(Error::UnknownParent {
+                    commit_id: commit.id(),
+                    parent_id,
+                })
+            }
+        });
     }
-    let parent_id = commit.parent_id(0)?;
-    let local_parent = match commits_map.get(&parent_id) {
-        Some(parent_ci) => parent_ci,
-        None => {
-            return Err(Error::UnknownParent {
-                commit_id: commit.id(),
-                parent_id,
-            })
-        }
-    };
+    assert!(local_parents.len() > 0);
 
     // checkout parent, then cherrypick on top of it
-    repo.set_head_detached(local_parent.id())?;
+    repo.set_head_detached(local_parents[0].id())?;
     force_checkout_head(&repo)?;
 
     // cherrypick changes on top of HEAD
     let mut cherrypick_opts = git2::CherrypickOptions::new();
-    if commit.parents().len() > 1 {
+    if local_parents.len() > 1 {
         // TODO: find the right mainline
         cherrypick_opts.mainline(1);
     }
     repo.cherrypick(&commit, Some(&mut cherrypick_opts))?;
 
     // commit the changes
-    let head_oid = repo.head()?.target().unwrap();
-    let head = repo.find_commit(head_oid)?;
     let tree_oid = repo.index()?.write_tree()?;
     let tree = repo.find_tree(tree_oid)?;
     let ci_oid = repo.commit(
@@ -157,7 +155,7 @@ fn copy_commit<'a>(
         &commit.committer(),
         &new_msg,
         &tree,
-        &[&head],
+        &local_parents,
     )?;
 
     let new_commit = repo.find_commit(ci_oid)?;

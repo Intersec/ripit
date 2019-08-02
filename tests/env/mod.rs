@@ -46,11 +46,16 @@ impl Deref for TestRepo {
 }
 
 impl TestRepo {
+    pub fn force_checkout_head(&self) {
+        let mut opts = git2::build::CheckoutBuilder::new();
+        self.checkout_head(Some(&mut opts.force())).unwrap();
+    }
+
     pub fn commit_file(&self, filename: &str, commit_msg: &str) -> git2::Commit {
         let path = Path::new(self.workdir().unwrap()).join(filename);
         fs::File::create(&path)
             .unwrap()
-            .write_all(filename.as_bytes())
+            .write_all(commit_msg.as_bytes())
             .unwrap();
 
         let mut index = self.index().unwrap();
@@ -69,10 +74,16 @@ impl TestRepo {
         }
         .unwrap();
 
-        let mut opts = git2::build::CheckoutBuilder::new();
-        self.checkout_head(Some(&mut opts.force())).unwrap();
+        self.force_checkout_head();
 
         self.find_commit(commit_oid).unwrap()
+    }
+
+    /// Commit a file, and tag the commit (the tag name and the files content are the same)
+    fn commit_file_and_tag(&self, filename: &str, content: &str) -> git2::Commit {
+        let ci = self.commit_file(filename, content);
+        self.tag_lightweight(content, ci.as_object(), true).unwrap();
+        ci
     }
 
     pub fn check_file(&self, filename: &str, file_present: bool, file_in_index: bool) {
@@ -89,6 +100,35 @@ impl TestRepo {
         revwalk.push_head().unwrap();
 
         revwalk.count()
+    }
+
+    /// Do a commit-merge of the given commit in HEAD
+    fn do_merge(&self, theirs: &git2::Commit, content: &str) -> git2::Commit {
+        let annotated_theirs = self.find_annotated_commit(theirs.id()).unwrap();
+        self.merge(&[&annotated_theirs], None, None).unwrap();
+
+        let mut index = self.index().unwrap();
+        let tree = self.find_tree(index.write_tree().unwrap()).unwrap();
+
+        let head = self.head().unwrap().target().unwrap();
+        let head_ci = self.find_commit(head).unwrap();
+        let sig = self.signature().unwrap();
+
+        let commit_oid = self
+            .commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                content,
+                &tree,
+                &[&head_ci, &theirs],
+            )
+            .unwrap();
+        let ci = self.find_commit(commit_oid).unwrap();
+        self.tag_lightweight(content, ci.as_object(), true).unwrap();
+
+        self.force_checkout_head();
+        ci
     }
 }
 
@@ -154,6 +194,51 @@ impl TestEnv {
             remote_repo,
             ripit_exec: find_ripit_exec(),
         }
+    }
+
+    /// Setup multiple branches with conflicting commits and merges.
+    ///
+    ///                     --> C6 --> C7 -   // feature branch merged in master
+    ///                    /               \
+    /// C1 -> C2 -> C3 -> C4 -> C5 ---------> C8 (master)
+    ///  \     \
+    ///   \     --> C9 -------> C10 (branch1) // second stable branch
+    ///    \                /
+    ///     -> C11 -> C12 -- (branch0) // stable branch
+    ///
+    /// C9 conflicts with C5
+    ///
+    pub fn setup_branches(&self) {
+        let c1 = self.remote_repo.commit_file_and_tag("c1", "c1");
+        let c2 = self.remote_repo.commit_file_and_tag("c2", "c2");
+        self.remote_repo.commit_file_and_tag("c3", "c3");
+        let c4 = self.remote_repo.commit_file_and_tag("c4", "c4");
+
+        self.remote_repo.commit_file_and_tag("c6", "c6");
+        let c7 = self.remote_repo.commit_file_and_tag("c7", "c7");
+
+        self.remote_repo
+            .reset(c4.as_object(), git2::ResetType::Hard, None)
+            .unwrap();
+        self.remote_repo.commit_file_and_tag("c5", "c5");
+        self.remote_repo.do_merge(&c7, "c8");
+
+        self.remote_repo.branch("branch0", &c1, true).unwrap();
+        self.remote_repo.set_head("refs/heads/branch0").unwrap();
+        self.remote_repo.force_checkout_head();
+
+        self.remote_repo.commit_file_and_tag("c11", "c11");
+        let c12 = self.remote_repo.commit_file_and_tag("c12", "c12");
+
+        self.remote_repo.branch("branch1", &c2, true).unwrap();
+        self.remote_repo.set_head("refs/heads/branch1").unwrap();
+        self.remote_repo.force_checkout_head();
+        // have c9 conflict with c5 by writing in the same file, with a different content
+        self.remote_repo.commit_file_and_tag("c5", "c9");
+        self.remote_repo.do_merge(&c12, "c10");
+
+        self.remote_repo.set_head("refs/heads/master").unwrap();
+        self.remote_repo.force_checkout_head();
     }
 
     fn run_ripit(&self, successful: bool, args: &[&str], err_msg: Option<&str>) {
