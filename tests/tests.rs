@@ -240,14 +240,73 @@ fn test_uproot_sync() {
     let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
 
     assert!(head_ci.summary().unwrap().contains("c8"));
+    assert!(!head_ci.message().unwrap().contains("uprooted"));
+
     let parents: Vec<git2::Commit> = head_ci.parents().collect();
     assert_eq!(parents.len(), 2);
     assert!(parents[0].summary().unwrap().contains("Bootstrap"));
     assert!(parents[1].summary().unwrap().contains("c7"));
+    assert!(parents[1].message().unwrap().contains("uprooted"));
 
     let parents: Vec<git2::Commit> = parents[1].parents().collect();
     assert_eq!(parents.len(), 1);
     assert!(parents[0].summary().unwrap().contains("c6"));
+    assert!(parents[0].message().unwrap().contains("uprooted"));
+
+    let parents: Vec<git2::Commit> = parents[0].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+}
+
+/// Test uprooting with conflicts
+#[test]
+fn test_uproot_sync_with_conflicts() {
+    let env = env::TestEnv::new(false);
+    env.setup_branches();
+
+    // start syncing from c9
+    let c9 = env.remote_repo.revparse_single("c9").unwrap();
+    env.remote_repo
+        .reset(&c9, git2::ResetType::Hard, None)
+        .unwrap();
+    env.run_ripit_success(&["--bootstrap", "private"]);
+
+    // then sync c10: should try to reproduce the merge by cherry-picking the unknown commits.
+    // As there is a conflict, the sync should fail
+    let c10 = env.remote_repo.revparse_single("c10").unwrap();
+    env.remote_repo
+        .reset(&c10, git2::ResetType::Hard, None)
+        .unwrap();
+    env.run_ripit_failure(&["-yu", "private"], Some("due to conflicts"));
+
+    // Resolve conflict and do a commit
+    env.local_repo.resolve_conflict_and_commit("c12");
+
+    // check the commited file contains a rip-it tag
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+    assert!(head_ci.message().unwrap_or("").contains("rip-it:"));
+
+    // Go-on with the synchronization, now that the conflict is
+    // solved.
+    env.run_ripit_success(&["-yu", "private"]);
+
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+
+    assert!(head_ci.summary().unwrap().contains("c10"));
+    assert!(!head_ci.message().unwrap().contains("uprooted"));
+
+    let parents: Vec<git2::Commit> = head_ci.parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+    assert!(parents[1].summary().unwrap().contains("c12"));
+    assert!(parents[1].message().unwrap().contains("uprooted"));
+
+    let parents: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("c11"));
+    assert!(parents[0].message().unwrap().contains("uprooted"));
 
     let parents: Vec<git2::Commit> = parents[0].parents().collect();
     assert_eq!(parents.len(), 1);

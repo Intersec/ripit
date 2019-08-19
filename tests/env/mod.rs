@@ -51,15 +51,8 @@ impl TestRepo {
         self.checkout_head(Some(&mut opts.force())).unwrap();
     }
 
-    pub fn commit_file(&self, filename: &str, commit_msg: &str) -> git2::Commit {
-        let path = Path::new(self.workdir().unwrap()).join(filename);
-        fs::File::create(&path)
-            .unwrap()
-            .write_all(commit_msg.as_bytes())
-            .unwrap();
-
+    pub fn do_commit(&self, msg: &str) -> git2::Commit {
         let mut index = self.index().unwrap();
-        index.add_path(Path::new(filename)).unwrap();
         let tree = self.find_tree(index.write_tree().unwrap()).unwrap();
 
         let head = match self.head() {
@@ -69,14 +62,41 @@ impl TestRepo {
         let sig = self.signature().unwrap();
 
         let commit_oid = match head {
-            Some(ci) => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[&ci]),
-            None => self.commit(Some("HEAD"), &sig, &sig, commit_msg, &tree, &[]),
+            Some(ci) => self.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[&ci]),
+            None => self.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[]),
         }
         .unwrap();
 
         self.force_checkout_head();
 
         self.find_commit(commit_oid).unwrap()
+    }
+
+    fn write_and_add_file(&self, filename: &str, content: &str) {
+        let path = Path::new(self.workdir().unwrap()).join(filename);
+        fs::File::create(&path)
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
+
+        let mut index = self.index().unwrap();
+        index.add_path(Path::new(filename)).unwrap();
+    }
+
+    pub fn commit_file(&self, filename: &str, commit_msg: &str) -> git2::Commit {
+        self.write_and_add_file(filename, commit_msg);
+        self.do_commit(commit_msg)
+    }
+
+    pub fn resolve_conflict_and_commit(&self, filename: &str) -> git2::Commit {
+        // overwrite file containing conflicts, and add it to the index
+        self.write_and_add_file(filename, "resolved conflict");
+
+        // do a commit, but get the commit msg from the .git/MERGE_MSG file.
+        // This is to simulate what "git commit" would do
+        let path = Path::new(self.path()).join("MERGE_MSG");
+        let content = std::fs::read_to_string(path).unwrap();
+        self.do_commit(&content)
     }
 
     /// Commit a file, and tag the commit (the tag name and the files content are the same)
@@ -108,6 +128,31 @@ impl TestRepo {
         self.merge(&[&annotated_theirs], None, None).unwrap();
 
         let mut index = self.index().unwrap();
+
+        /* resolve conflicts with dummy content.
+         * Only changes in existing file is handled for this routine.
+         */
+        let mut resolved_paths = Vec::new();
+        for conflict in index.conflicts().unwrap() {
+            let filepath = conflict.unwrap().our.unwrap().path;
+            let strpath = std::str::from_utf8(&filepath).unwrap();
+            let abspath = Path::new(self.workdir().unwrap()).join(strpath);
+
+            /* overwrite file with dummy content */
+            fs::File::create(&abspath)
+                .unwrap()
+                .write_all(b"resolved conflict!")
+                .unwrap();
+
+            /* must accumulate the paths, we cannot call add_path and modify the index
+             * while we iterate on it */
+            resolved_paths.push(filepath);
+        }
+        for filepath in resolved_paths {
+            let path = std::str::from_utf8(&filepath).unwrap();
+            index.add_path(Path::new(path)).unwrap();
+        }
+
         let tree = self.find_tree(index.write_tree().unwrap()).unwrap();
 
         let head = self.head().unwrap().target().unwrap();
@@ -206,7 +251,7 @@ impl TestEnv {
     ///    \                /
     ///     -> C11 -> C12 -- (branch0) // stable branch
     ///
-    /// C9 conflicts with C5
+    /// C12 conflicts with C9
     ///
     pub fn setup_branches(&self) {
         let c1 = self.remote_repo.commit_file_and_tag("c1", "c1");
@@ -233,8 +278,8 @@ impl TestEnv {
         self.remote_repo.branch("branch1", &c2, true).unwrap();
         self.remote_repo.set_head("refs/heads/branch1").unwrap();
         self.remote_repo.force_checkout_head();
-        // have c9 conflict with c5 by writing in the same file, with a different content
-        self.remote_repo.commit_file_and_tag("c5", "c9");
+        // have c9 conflict with c12 by writing in the same file, with a different content
+        self.remote_repo.commit_file_and_tag("c12", "c9");
         self.remote_repo.do_merge(&c12, "c10");
 
         self.remote_repo.set_head("refs/heads/master").unwrap();

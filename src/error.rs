@@ -18,6 +18,10 @@ pub enum Error {
         commit_id: git2::Oid,
         parent_id: git2::Oid,
     },
+    // A synchronization caused conflicts in the index. The user has to solve them
+    HasConflicts {
+        summary: String,
+    },
 }
 
 impl From<git2::Error> for Error {
@@ -42,10 +46,22 @@ impl fmt::Display for Error {
             Error::InvalidConfig { field, error } => {
                 write!(f, "Invalid {} option: {}", field, error)
             }
-            Error::UnknownParent { commit_id, parent_id } => {
-                write!(f, "Cannot synchronize commit {}: its parent {} cannot be found in the \
-                       local repository", commit_id, parent_id)
-            }
+            Error::UnknownParent {
+                commit_id,
+                parent_id,
+            } => write!(
+                f,
+                "Cannot synchronize commit {}: its parent {} cannot be found in the \
+                 local repository",
+                commit_id, parent_id
+            ),
+            Error::HasConflicts { summary } => write!(
+                f,
+                "Cannot synchronize the following commit due to conflicts:\n  {}\n\
+                 Solve the conflicts and commit the resolutions, \
+                 then run the synchronization again.",
+                summary
+            ),
         }
     }
 }
