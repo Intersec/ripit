@@ -133,6 +133,7 @@ Refs:
             "\
 Not even a brief
  Refs: b
+
 rip-it: {}
 ",
             c2.id()

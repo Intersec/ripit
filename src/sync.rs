@@ -44,6 +44,10 @@ fn retrieve_ripit_tag(commit: &git2::Commit) -> Option<String> {
     }
 }
 
+fn format_ripit_tag(commit: &git2::Commit) -> String {
+    format!("rip-it: {}\n", commit.id())
+}
+
 fn build_commits_map<'a>(
     repo: &'a git2::Repository,
     last_commit: &git2::Commit,
@@ -112,11 +116,18 @@ fn do_cherrypick<'a, 'b>(
     repo.set_head_detached(local_parents[0].id())?;
     force_checkout_head(&repo)?;
 
-    let new_msg = format!(
-        "{}\nrip-it: {}\n",
-        filter_commit_msg(commit.message().unwrap_or(""), opts),
-        commit.id()
-    );
+    let tag = format_ripit_tag(commit);
+    let new_msg = match commit.message() {
+        Some(orig_msg) => {
+            let orig_msg = filter_commit_msg(orig_msg, opts);
+            if orig_msg.ends_with("\n") {
+                format!("{}\n{}", orig_msg, tag)
+            } else {
+                format!("{}\n\n{}", orig_msg, tag)
+            }
+        }
+        None => tag,
+    };
 
     // cherrypick changes on top of HEAD
     let mut cherrypick_opts = git2::CherrypickOptions::new();
