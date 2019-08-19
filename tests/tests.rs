@@ -198,3 +198,47 @@ fn test_merge_sync() {
         .unwrap()
         .contains("Bootstrap repository"));
 }
+
+/// Test uprooting of commits with unknown parents
+#[test]
+fn test_uproot_sync() {
+    let env = env::TestEnv::new(false);
+    env.setup_branches();
+
+    // start syncing from c5
+    let c5 = env.remote_repo.revparse_single("c5").unwrap();
+    env.remote_repo
+        .reset(&c5, git2::ResetType::Hard, None)
+        .unwrap();
+    env.run_ripit_success(&["--bootstrap", "private"]);
+
+    // then try to sync c8: should fail because of unknown parent
+    let c8 = env.remote_repo.revparse_single("c8").unwrap();
+    env.remote_repo
+        .reset(&c8, git2::ResetType::Hard, None)
+        .unwrap();
+    env.run_ripit_failure(
+        &["-y", "private"],
+        Some("cannot be found in the local repository"),
+    );
+
+    // sync c8 with uprooting, should work
+    env.run_ripit_success(&["-yu", "private"]);
+
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+
+    assert!(head_ci.summary().unwrap().contains("c8"));
+    let parents: Vec<git2::Commit> = head_ci.parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+    assert!(parents[1].summary().unwrap().contains("c7"));
+
+    let parents: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("c6"));
+
+    let parents: Vec<git2::Commit> = parents[0].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+}

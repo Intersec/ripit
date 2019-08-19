@@ -102,41 +102,21 @@ fn filter_commit_msg(msg: &str, opts: &app::Options) -> String {
     new_lines.join("\n")
 }
 
-/// Cherrypick a given commit on top of HEAD, and add the ripit tag
-fn copy_commit<'a>(
+fn do_cherrypick<'a, 'b>(
     repo: &'a git2::Repository,
-    commit: &git2::Commit,
-    commits_map: &HashMap<git2::Oid, git2::Commit>,
+    commit: &'b git2::Commit,
+    local_parents: &Vec<&'b git2::Commit>,
     opts: &app::Options,
 ) -> Result<git2::Commit<'a>, Error> {
-    if opts.verbose {
-        println!("Copying commit {}...", commit.id());
-    }
+    // checkout parent, then cherrypick on top of it
+    repo.set_head_detached(local_parents[0].id())?;
+    force_checkout_head(&repo)?;
 
     let new_msg = format!(
         "{}\nrip-it: {}\n",
         filter_commit_msg(commit.message().unwrap_or(""), opts),
         commit.id()
     );
-
-    // Find parent of the commit in local repo
-    let mut local_parents = Vec::new();
-    for parent_id in commit.parent_ids() {
-        local_parents.push(match commits_map.get(&parent_id) {
-            Some(parent_ci) => parent_ci,
-            None => {
-                return Err(Error::UnknownParent {
-                    commit_id: commit.id(),
-                    parent_id,
-                })
-            }
-        });
-    }
-    assert!(local_parents.len() > 0);
-
-    // checkout parent, then cherrypick on top of it
-    repo.set_head_detached(local_parents[0].id())?;
-    force_checkout_head(&repo)?;
 
     // cherrypick changes on top of HEAD
     let mut cherrypick_opts = git2::CherrypickOptions::new();
@@ -165,6 +145,48 @@ fn copy_commit<'a>(
     force_checkout_head(&repo)?;
 
     Ok(new_commit)
+}
+
+/// Cherrypick a given commit on top of HEAD, and add the ripit tag
+fn copy_commit<'a, 'b>(
+    repo: &'a git2::Repository,
+    commit: &'b git2::Commit,
+    commits_map: &'b HashMap<git2::Oid, git2::Commit>,
+    opts: &app::Options,
+) -> Result<git2::Commit<'a>, Error> {
+    let head;
+
+    if opts.verbose {
+        println!("Copying commit {}...", commit.id());
+    }
+
+    // Find parent of the commit in local repo
+    let mut local_parents = Vec::new();
+    for parent_id in commit.parent_ids() {
+        match commits_map.get(&parent_id) {
+            Some(parent_ci) => local_parents.push(parent_ci),
+            None => {
+                if !opts.uproot {
+                    return Err(Error::UnknownParent {
+                        commit_id: commit.id(),
+                        parent_id,
+                    });
+                }
+            }
+        }
+    }
+
+    if local_parents.len() == 0 {
+        assert!(opts.uproot);
+        // uproot the commit on HEAD
+        println!("Uproot commit {}.", commit.id());
+        // XXX: head *has* a target, because we have at least the bootstrap
+        // commit.
+        head = repo.find_commit(repo.head().unwrap().target().unwrap())?;
+        local_parents.push(&head);
+    }
+
+    do_cherrypick(repo, commit, &local_parents, opts)
 }
 
 /// Sync the local repository with the new changes from the given remote

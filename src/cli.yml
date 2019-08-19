@@ -22,6 +22,22 @@ args:
         long: bootstrap
         help: "Bootstrap the local repository"
 
+    # behavioral features
+    - uproot:
+        short: u
+        long: uproot
+        help: "Allow commits uprooting"
+        long_help: >
+            By default, a commit with an unknown parent cannot be
+            synchronized. This prevents mistakes and ensures the topology
+            of the sync'ed repository is preserved.
+            However, there are some legitimate cases when this situation can
+            happen, for example when synchronizing a merge commit with
+            one ancestor dating from prior to the bootstrap.
+            In that case, we want to cherry-pick the commits brought by
+            the merge (or in this context, "uproot" them).
+            This behavior can be activated with this flag.
+
     # configuration
     - filters:
         short: C
