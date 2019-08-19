@@ -112,8 +112,14 @@ fn do_cherrypick<'a, 'b>(
     local_parents: &Vec<&'b git2::Commit>,
     opts: &app::Options,
 ) -> Result<git2::Commit<'a>, Error> {
+    let update_branch = local_parents[0].id() == repo.refname_to_id(&opts.branch_ref)?;
+
     // checkout parent, then cherrypick on top of it
-    repo.set_head_detached(local_parents[0].id())?;
+    if update_branch {
+        repo.set_head(&opts.branch_ref)?;
+    } else {
+        repo.set_head_detached(local_parents[0].id())?;
+    }
     force_checkout_head(&repo)?;
 
     let tag = format_ripit_tag(commit);
@@ -139,7 +145,6 @@ fn do_cherrypick<'a, 'b>(
 
     // if the first parent is the branch's head, then directly
     // update the branch when committing
-    let update_branch = local_parents[0].id() == repo.refname_to_id(&opts.branch_ref)?;
     let update_ref = if update_branch {
         &opts.branch_ref
     } else {
@@ -161,13 +166,8 @@ fn do_cherrypick<'a, 'b>(
     let new_commit = repo.find_commit(ci_oid)?;
     println!("Created commit {}.", new_commit.id());
 
-    if update_branch {
-        // retrack the branch with HEAD
-        repo.set_head(&opts.branch_ref)?;
-    } else {
-        // make the working directory match HEAD
-        force_checkout_head(&repo)?;
-    }
+    // make the working directory match HEAD
+    force_checkout_head(&repo)?;
 
     Ok(new_commit)
 }
