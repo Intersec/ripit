@@ -137,11 +137,20 @@ fn do_cherrypick<'a, 'b>(
     }
     repo.cherrypick(&commit, Some(&mut cherrypick_opts))?;
 
+    // if the first parent is the branch's head, then directly
+    // update the branch when committing
+    let update_branch = local_parents[0].id() == repo.refname_to_id(&opts.branch_ref)?;
+    let update_ref = if update_branch {
+        &opts.branch_ref
+    } else {
+        "HEAD"
+    };
+
     // commit the changes
     let tree_oid = repo.index()?.write_tree()?;
     let tree = repo.find_tree(tree_oid)?;
     let ci_oid = repo.commit(
-        Some("HEAD"),
+        Some(update_ref),
         &commit.author(),
         &commit.committer(),
         &new_msg,
@@ -152,8 +161,13 @@ fn do_cherrypick<'a, 'b>(
     let new_commit = repo.find_commit(ci_oid)?;
     println!("Created commit {}.", new_commit.id());
 
-    // make the working directory match HEAD
-    force_checkout_head(&repo)?;
+    if update_branch {
+        // retrack the branch with HEAD
+        repo.set_head(&opts.branch_ref)?;
+    } else {
+        // make the working directory match HEAD
+        force_checkout_head(&repo)?;
+    }
 
     Ok(new_commit)
 }
@@ -264,8 +278,6 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
         // add mapping for this new pair
         commits_map.insert(ci.id(), copied_ci);
     }
-
-    /* FIXME: we should update the local branch ref too */
 
     Ok(())
 }

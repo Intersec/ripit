@@ -1,8 +1,13 @@
 use crate::error;
 
 pub struct Options {
+    // path to the local repo
     pub repo: String,
+    // name of the branch to synchronize
     pub branch: String,
+    // full ref name for the local branch
+    pub branch_ref: String,
+    // name of the remote to synchronize from
     pub remote: String,
 
     pub bootstrap: bool,
@@ -34,9 +39,13 @@ pub fn parse_args() -> Result<Options, error::Error> {
         }
     };
 
+    let branch = matches.value_of("branch").unwrap_or("master").to_owned();
+    let branch_ref = format!("refs/heads/{}", &branch);
+
     Ok(Options {
         repo: matches.value_of("repo").unwrap_or(".").to_owned(),
-        branch: matches.value_of("branch").unwrap_or("master").to_owned(),
+        branch,
+        branch_ref,
         remote: matches.value_of("remote").unwrap().to_owned(),
 
         bootstrap: matches.is_present("bootstrap"),

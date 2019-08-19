@@ -41,6 +41,11 @@ fn test_basic_sync() {
 
     env.run_ripit_success(&["-y", "private"]); // missing initial commit
 
+    // head tracks master
+    let local_head = env.local_repo.head().unwrap();
+    assert!(local_head.is_branch(), true);
+    assert_eq!(local_head.shorthand().unwrap(), "master");
+
     assert_eq!(env.local_repo.count_commits(), 3); // bootstrap + 2 synced commits
     env.local_repo.check_file("a.txt", true, true);
     env.local_repo.check_file("b.txt", true, true);
@@ -48,6 +53,11 @@ fn test_basic_sync() {
     env.remote_repo.commit_file("c.txt", "c");
     env.run_ripit_success(&["-y", "private"]); // missing initial commit
     env.local_repo.check_file("c.txt", true, true);
+
+    // head tracks master
+    let local_head = env.local_repo.head().unwrap();
+    assert!(local_head.is_branch(), true);
+    assert_eq!(local_head.shorthand().unwrap(), "master");
 
     // check the tags are valid
     let mut remote_revwalk = env.remote_repo.revwalk().unwrap();
