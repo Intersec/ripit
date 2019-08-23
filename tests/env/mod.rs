@@ -208,7 +208,7 @@ impl TestEnv {
         let local_repo = TestRepo(git2::Repository::init(local_dir.path()).unwrap());
 
         // Setup remote repo as remote named "private" of local repo
-        let url = format!("file://{}", remote_dir.path().to_str().unwrap());
+        let url = remote_dir.path().to_str().unwrap();
         local_repo.remote("private", &url).unwrap();
 
         for repo in &[&remote_repo, &local_repo] {
