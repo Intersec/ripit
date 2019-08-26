@@ -175,6 +175,10 @@ impl TestRepo {
         self.force_checkout_head();
         ci
     }
+
+    pub fn reset_hard(&self, commit: &git2::Object) {
+        self.reset(commit, git2::ResetType::Hard, None).unwrap();
+    }
 }
 
 // }}}
@@ -262,9 +266,7 @@ impl TestEnv {
         self.remote_repo.commit_file_and_tag("c6", "c6");
         let c7 = self.remote_repo.commit_file_and_tag("c7", "c7");
 
-        self.remote_repo
-            .reset(c4.as_object(), git2::ResetType::Hard, None)
-            .unwrap();
+        self.remote_repo.reset_hard(c4.as_object());
         self.remote_repo.commit_file_and_tag("c5", "c5");
         self.remote_repo.do_merge(&c7, "c8");
 
@@ -284,6 +286,33 @@ impl TestEnv {
 
         self.remote_repo.set_head("refs/heads/master").unwrap();
         self.remote_repo.force_checkout_head();
+    }
+
+    /// Setup uproot of merge
+    ///
+    /// Create a situation where a merge commit will be uprooted, by bootstraping
+    /// on top of one of the parent, then syncing a merge containing a merge with
+    /// this parent.
+    ///
+    ///             --> C3 --
+    ///            /         \
+    ///    --> C1 -------------> C4 ---
+    ///   /        \                   \
+    /// C0 ----------> C2 ----------------> C5
+    ///
+    pub fn setup_merge_uproot(&self) {
+        let c0 = self.remote_repo.commit_file_and_tag("c0", "c0");
+        let c1 = self.remote_repo.commit_file_and_tag("c1", "c1");
+        self.remote_repo.reset_hard(c0.as_object());
+        let c2 = self.remote_repo.do_merge(&c1, "c2");
+
+        self.remote_repo.reset_hard(c1.as_object());
+        let c3 = self.remote_repo.commit_file_and_tag("c3", "c3");
+        self.remote_repo.reset_hard(c1.as_object());
+        let c4 = self.remote_repo.do_merge(&c3, "c4");
+
+        self.remote_repo.reset_hard(c2.as_object());
+        self.remote_repo.do_merge(&c4, "c5");
     }
 
     fn run_ripit(&self, successful: bool, args: &[&str], err_msg: Option<&str>) {

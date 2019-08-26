@@ -172,16 +172,12 @@ fn test_merge_sync() {
 
     // start syncing from c4
     let c4 = env.remote_repo.revparse_single("c4").unwrap();
-    env.remote_repo
-        .reset(&c4, git2::ResetType::Hard, None)
-        .unwrap();
+    env.remote_repo.reset_hard(&c4);
     env.run_ripit_success(&["--bootstrap", "private"]);
 
     // then sync c8: should reproduce the merge commit
     let c8 = env.remote_repo.revparse_single("c8").unwrap();
-    env.remote_repo
-        .reset(&c8, git2::ResetType::Hard, None)
-        .unwrap();
+    env.remote_repo.reset_hard(&c8);
     env.run_ripit_success(&["-y", "private"]);
 
     env.local_repo.check_file("c4", true, true);
@@ -218,16 +214,12 @@ fn test_uproot_sync() {
 
     // start syncing from c5
     let c5 = env.remote_repo.revparse_single("c5").unwrap();
-    env.remote_repo
-        .reset(&c5, git2::ResetType::Hard, None)
-        .unwrap();
+    env.remote_repo.reset_hard(&c5);
     env.run_ripit_success(&["--bootstrap", "private"]);
 
     // then try to sync c8: should fail because of unknown parent
     let c8 = env.remote_repo.revparse_single("c8").unwrap();
-    env.remote_repo
-        .reset(&c8, git2::ResetType::Hard, None)
-        .unwrap();
+    env.remote_repo.reset_hard(&c8);
     env.run_ripit_failure(
         &["-y", "private"],
         Some("cannot be found in the local repository"),
@@ -266,17 +258,13 @@ fn test_uproot_sync_with_conflicts() {
 
     // start syncing from c9
     let c9 = env.remote_repo.revparse_single("c9").unwrap();
-    env.remote_repo
-        .reset(&c9, git2::ResetType::Hard, None)
-        .unwrap();
+    env.remote_repo.reset_hard(&c9);
     env.run_ripit_success(&["--bootstrap", "private"]);
 
     // then sync c10: should try to reproduce the merge by cherry-picking the unknown commits.
     // As there is a conflict, the sync should fail
     let c10 = env.remote_repo.revparse_single("c10").unwrap();
-    env.remote_repo
-        .reset(&c10, git2::ResetType::Hard, None)
-        .unwrap();
+    env.remote_repo.reset_hard(&c10);
     env.run_ripit_failure(&["-yu", "private"], Some("due to conflicts"));
 
     // Resolve conflict and do a commit
@@ -306,6 +294,54 @@ fn test_uproot_sync_with_conflicts() {
     let parents: Vec<git2::Commit> = parents[1].parents().collect();
     assert_eq!(parents.len(), 1);
     assert!(parents[0].summary().unwrap().contains("c11"));
+    assert!(parents[0].message().unwrap().contains("uprooted"));
+
+    let parents: Vec<git2::Commit> = parents[0].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+}
+
+/// Test uproot of merge commit with an unknown parent
+///
+/// Make sure that if we reach a merge commit with an unknown parent, it is
+/// properly uprooted with the proper mainline
+///
+///             --> C3 --
+///            /         \
+///    --> C1 -------------> C4 ---
+///   /        \                   \
+/// C0 ----------> C2 (bootstrap) ----> C5 (sync)
+///
+#[test]
+fn test_uproot_merge() {
+    let env = env::TestEnv::new(false);
+    env.setup_merge_uproot();
+
+    // start syncing from c2
+    let c2 = env.remote_repo.revparse_single("c2").unwrap();
+    env.remote_repo.reset_hard(&c2);
+    env.run_ripit_success(&["--bootstrap", "private"]);
+
+    // then sync c5, should uproot C4 which is a merge commit
+    let c5 = env.remote_repo.revparse_single("c5").unwrap();
+    env.remote_repo.reset_hard(&c5);
+    env.run_ripit_success(&["-yu", "private"]);
+
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+
+    assert!(head_ci.summary().unwrap().contains("c5"));
+    assert!(!head_ci.message().unwrap().contains("uprooted"));
+
+    let parents: Vec<git2::Commit> = head_ci.parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+    assert!(parents[1].summary().unwrap().contains("c4"));
+    assert!(parents[1].message().unwrap().contains("uprooted"));
+
+    let parents: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("c3"));
     assert!(parents[0].message().unwrap().contains("uprooted"));
 
     let parents: Vec<git2::Commit> = parents[0].parents().collect();

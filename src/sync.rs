@@ -208,6 +208,7 @@ fn do_cherrypick<'a, 'b>(
     repo: &'a git2::Repository,
     commit: &'b git2::Commit,
     local_parents: &Vec<&'b git2::Commit>,
+    is_merge: bool,
     uprooted: bool,
     opts: &app::Options,
 ) -> Result<git2::Commit<'a>, Error> {
@@ -225,7 +226,7 @@ fn do_cherrypick<'a, 'b>(
 
     // cherrypick changes on top of HEAD
     let mut cherrypick_opts = git2::CherrypickOptions::new();
-    if local_parents.len() > 1 {
+    if is_merge {
         // TODO: find the right mainline
         cherrypick_opts.mainline(1);
     }
@@ -302,6 +303,7 @@ fn copy_commit<'a, 'b>(
     // Find parent of the commit in local repo
     let mut local_parents = Vec::new();
     let mut uprooted = true;
+    let is_merge = commit.parent_count() > 1;
     for parent_id in commit.parent_ids() {
         match commits_map.get(&parent_id) {
             Some(parent_ci) => {
@@ -332,7 +334,7 @@ fn copy_commit<'a, 'b>(
     }
 
     Ok(SyncedCommit {
-        commit: do_cherrypick(repo, commit, &local_parents, uprooted, opts)?,
+        commit: do_cherrypick(repo, commit, &local_parents, is_merge, uprooted, opts)?,
         uprooted,
     })
 }
