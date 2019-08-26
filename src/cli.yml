@@ -71,10 +71,10 @@ args:
                     details
 
     # common options shared by every action
-    - verbose:
-        short: v
-        long: verbose
-        help: "Print verbose logs"
+    - quiet:
+        short: q
+        long: quiet
+        help: "Do not print detailed logs of the execution's progress"
     - yes:
         short: y
         long: yes

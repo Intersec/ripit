@@ -53,7 +53,7 @@ pub fn parse_args() -> Result<Options, error::Error> {
         commit_msg_filters,
 
         uproot: matches.is_present("uproot"),
-        verbose: matches.is_present("verbose"),
+        verbose: !matches.is_present("quiet"),
         yes: matches.is_present("yes"),
     })
 }

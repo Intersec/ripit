@@ -128,7 +128,7 @@ Refs:
     );
     assert_eq!(env.remote_repo.count_commits(), 3); // init + 2 commits
 
-    env.run_ripit_success(&["-vy", "-C", "^Refs", "-C", "test", "private"]);
+    env.run_ripit_success(&["-y", "-C", "^Refs", "-C", "test", "private"]);
 
     let mut revwalk = env.local_repo.revwalk().unwrap();
     revwalk.push_head().unwrap();
