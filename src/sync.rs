@@ -212,7 +212,8 @@ fn do_cherrypick<'a, 'b>(
     uprooted: bool,
     opts: &app::Options,
 ) -> Result<git2::Commit<'a>, Error> {
-    let update_branch = local_parents[0].id() == repo.refname_to_id(&opts.branch_ref)?;
+    let branch_id = repo.refname_to_id(&opts.branch_ref)?;
+    let update_branch = local_parents[0].id() == branch_id;
 
     // checkout parent, then cherrypick on top of it
     if update_branch {
@@ -279,6 +280,16 @@ fn do_cherrypick<'a, 'b>(
         println!("Uprooted commit {}.", new_commit.id());
     } else {
         println!("Created commit {}.", new_commit.id());
+    }
+
+    // if one of the following parents was the local branch, then update it.
+    //
+    // This can happen when syncing merge commits, as we will first synchronize the second
+    // branch, and update the local branch, then synchronize the merge commit. We need to
+    // fix the local branch back to the merge commit.
+    if !update_branch && local_parents.iter().any(|p| p.id() == branch_id) {
+        repo.branch(&opts.branch, &new_commit, true)?;
+        repo.set_head(&opts.branch_ref)?;
     }
 
     // make the working directory match HEAD

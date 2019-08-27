@@ -333,6 +333,11 @@ fn test_uproot_merge() {
     assert!(head_ci.summary().unwrap().contains("c5"));
     assert!(!head_ci.message().unwrap().contains("uprooted"));
 
+    // master should point to C5
+    let local_head = env.local_repo.head().unwrap();
+    assert!(local_head.is_branch(), true);
+    assert_eq!(local_head.shorthand().unwrap(), "master");
+
     let parents: Vec<git2::Commit> = head_ci.parents().collect();
     assert_eq!(parents.len(), 2);
     assert!(parents[0].summary().unwrap().contains("Bootstrap"));
