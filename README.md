@@ -6,9 +6,12 @@ Its main purpose is to be able to publish a repository while being able to
 control what is made public. For example:
 * Only publish after a given commit, so that the previous history is kept
   private.
-* Remove specific blocks or tags from commit messages (for example,
-  paragraphs marked as private, or tags referencing internal tickets).
-* Redact author of commits to keep anonymity if desired.
+* Remove specific tags from commit messages (for example, tags
+  referencing internal tickets).
+* Redact author of commits to keep anonymity if desired (not yet developed).
+
+The topology of the repository is kept as much as possible. In particular, merge
+commits are properly copied if possible (see [uprooting](#Uprooting) for more details).
 
 ## Installation
 
@@ -16,48 +19,116 @@ control what is made public. For example:
 [cargo](https://github.com/rust-lang/cargo "cargo"). To build it, simply do:
 
 ```console
-$ cargo build
+$ cargo build --release
 $ cargo install
 ```
 
 ## Use
 
-**ripit** works by adding a tag in every copied commits that references the
-SHA-1 of the original commit. This makes it possible to know the last commit
-synchronized from the source repository. Syncing the two repositories then
-means copying every new commits created on top of this commit from the
-source repository.
+**ripit** works inside a local repository (the public one), copying commits from
+a remote (the private repository).
 
-For the moment, **ripit** only works on a single branch, and do not handle
-merge commits. Both of those limitations are planned to be removed.
+To use **ripit**, a configuration file must first be created. A complete template
+is available in *config-template.yml*, here is an example:
 
-**ripit** works from a local clone of the destination repository, with a
-remote tracking the source repository. Before the two repositories can be
-synchronized, a initial commit must be bootstrapped on the destination
-repository:
+```yaml
+path: /path/to/the/local/repo
+remote: private
+branch: master
+```
+
+### Bootstrapping
+
+Then, a bootstrap commit must first be created, which will initialize the
+local repository with a single commit, containing the state of the
+_private/master_ branch.
 
 ```console
-$ mkdir public && cd public
+$ mkdir /path/to/the/local/repo && cd /path/to/the/local/repo
 $ git init
 $ git remote add private <...>
-$ ripit --bootstrap private
+$ ripit --bootstrap config.yml
+Fetch branch master in remote private...
+Bootstrap commit 0573aafd79531c93c4149cc8a10dad54c800ca7a created.
 ```
 
-This initial commit will import the current state of the source repository,
-and add a tag in the commit message. After this step, synchronization is a
-simple command:
+### Synchronization
+Then, running **ripit** will copy all new commits from the *private/master*
+branch into the local repository. This means that all commits from the private
+repository that were committed before the bootstrap are hidden, and only
+the new commits will be copied in the local repository.
 
 ```console
-$ ripit private # -b <branch> for a specific branch, 'master' is the default
+$ ripit config.yml
+Fetch branch master in remote private...
+Found ripit tag, last synced commit was fe81a4739b7817304eb0fa1bf5719b05e324ba21.
+Commits to synchronize:
+  Commit f1350c8c737c3d2a462956b73f8e5befd021321a
+    Johnny Joestar <johnny.joestar@speedwagon.com>
+    add new spin feature
+
+  Commit 19fc6a5690d8c56ecbe26b45508a0f939dedbbf7
+    Gyro Zeppeli <gyro.zeppeli@napoli.it>
+    introduce mozarella easter egg
+
+Is this ok? [yN] y
+Copying commit f1350c8c737c3d2a462956b73f8e5befd021321a...
+Created commit a03ccdee76289dd52c8f79442588084f0fcab9d6.
+Copying commit 19fc6a5690d8c56ecbe26b45508a0f939dedbbf7...
+Created commit 343178000ab4ee6d207787ccb44e79766689c0e1.
 ```
 
-This command will:
-* Fetch the up-to-date version of the remote's branch.
-* Display a list of new commits to synchronize, and ask for confirmation.
-* Copy the commits in the local repo.
+A prompt is displayed to allow checking whether the commits about to be
+synchronized can be copied. Commits are not pushed automatically after
+being synchronized, it is up to the caller to make sure the copies are valid,
+and that the new commits can be pushed.
 
-## Features
+Every commit contains a **tag**, which is used to map copied commits with
+the original ones:
 
-* Bootstrap a repository with the state of another one.
-* Copy commits from a repository.
-* Filter out lines in commit messages.
+```console
+$ git show
+commit 343178000ab4ee6d207787ccb44e79766689c0e1
+Author: Gyro Zeppeli <gyro.zeppeli@napoli.it>
+Date:   Fri Aug 16 14:11:36 2019 +0200
+
+    introduce mozarella easter egg
+
+    rip-it: 19fc6a5690d8c56ecbe26b45508a0f939dedbbf7
+```
+
+### Uprooting
+
+In some cases, commits cannot be properly copied, and the synchronization
+will be rejected. This can happen when trying to copy a merge commit that
+brings commits with ancestors that predates the bootstrap. To handle this
+situation, **ripit** allows cherry-picking those commits on top of the local
+branch, a process called _uprooting_.
+
+![Remote situation](assets/graph_uproot_remote.png)
+
+*Remote situation, bootstrap was done on C1*
+
+![Local situation](assets/graph_uproot_local.png)
+
+*Local situation, commits C2 and C3 have been uprooted*
+
+The topology of the repository is not preserved with this operation,
+as those commits in the local repository will have different parents
+than the original commits. This behavior is not activated by default to prevent
+mistakes, as this situation can only happen if part of the remote repository
+was hidden with the bootstrap. The `-u` flag must be used.
+
+In addition, as the topology is not preserved, conflicts can happen when
+copying those commits. In those cases, it is up to the user to resolve the
+conflicts, and resume the synchronization.
+
+## Limitations
+
+* Synchronization on a single branch is handled. Support for multiple branches
+  is planned.
+* **ripit** is still in alpha stage. Complex topologies might break down, and copies
+  must be impected by hand to make sure no private information are leaked. A stable
+  release is planned in the near future.
+
+_thanks to [GitGraphJs](https://gitgraphjs.com) for the git graph generation_
