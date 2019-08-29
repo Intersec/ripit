@@ -267,10 +267,15 @@ fn test_uproot_sync_with_conflicts() {
     // Resolve conflict and do a commit
     env.local_repo.resolve_conflict_and_commit("c12");
 
-    // check the commited file contains a rip-it tag
+    // check the committed file contains a rip-it tag
     let head_tgt = env.local_repo.head().unwrap().target().unwrap();
     let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
     assert!(head_ci.message().unwrap_or("").contains("rip-it:"));
+
+    // check the committed file does not contained filter out lines.
+    // As the commit was done by the user, the filtering process is different than
+    // when syncing.
+    assert!(!head_ci.message().unwrap_or("").contains("test"));
 
     // Go-on with the synchronization, now that the conflict is
     // solved.

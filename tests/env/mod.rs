@@ -100,9 +100,9 @@ impl TestRepo {
     }
 
     /// Commit a file, and tag the commit (the tag name and the files content are the same)
-    fn commit_file_and_tag(&self, filename: &str, content: &str) -> git2::Commit {
-        let ci = self.commit_file(filename, content);
-        self.tag_lightweight(content, ci.as_object(), true).unwrap();
+    fn commit_file_and_tag(&self, filename: &str, tag: &str) -> git2::Commit {
+        let ci = self.commit_file(filename, &format!("{}\n\nline test filtered\ndetails", tag));
+        self.tag_lightweight(tag, ci.as_object(), true).unwrap();
         ci
     }
 

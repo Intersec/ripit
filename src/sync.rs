@@ -2,7 +2,6 @@ use crate::app;
 use crate::error::Error;
 use crate::util;
 use std::collections::{HashMap, HashSet};
-use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 
@@ -193,12 +192,32 @@ fn filter_commit_msg(msg: &str, opts: &app::Options) -> String {
     new_lines.join("\n")
 }
 
-/// Append the tag to .git/MERGE_MSG, if it exists
-fn append_tag_in_merge_msg(repo: &git2::Repository, tag: &str) {
-    let path = Path::new(repo.path()).join("MERGE_MSG");
+// TODO: use a string builder, to avoid the double alloc
+fn update_commit_msg(orig_msg: &str, tag: &str, opts: &app::Options) -> String {
+    let orig_msg = filter_commit_msg(orig_msg, &opts);
+    if orig_msg.ends_with("\n") {
+        format!("{}\n{}\n", orig_msg, tag)
+    } else {
+        format!("{}\n\n{}\n", orig_msg, tag)
+    }
+}
 
-    if let Ok(mut file) = OpenOptions::new().append(true).open(path) {
-        if let Err(e) = writeln!(file, "\n\n{}", tag) {
+/// Append the tag to .git/MERGE_MSG, if it exists
+fn update_merge_msg(repo: &git2::Repository, tag: &str, opts: &app::Options) {
+    let path = Path::new(repo.path()).join("MERGE_MSG");
+    let msg = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error when reading the MERGE_MSG file: {}", e);
+            "".to_owned()
+        }
+    };
+
+    // TODO: use a string builder
+    let msg = update_commit_msg(&msg, tag, opts);
+
+    if let Ok(mut file) = std::fs::File::create(&path) {
+        if let Err(e) = write!(file, "{}", &msg) {
             eprintln!("Error when adding rip-it tag to MERGE_MSG: {}", e);
         }
     }
@@ -234,10 +253,12 @@ fn do_cherrypick<'a, 'b>(
     repo.cherrypick(&commit, Some(&mut cherrypick_opts))?;
 
     if repo.index()?.has_conflicts() {
-        // Add the tag in the saved commit message. That way, when the user
-        // resolves the conflicts and calls "git commit", the tag will
-        // be present.
-        append_tag_in_merge_msg(repo, &tag);
+        // The commit message is written in .git/MERGE_MSG, and will be
+        // used when the user commits the changes.
+        // It must thus be updated to:
+        //  - apply the filters
+        //  - add the ripit-tag
+        update_merge_msg(repo, &tag, &opts);
 
         return Err(Error::HasConflicts {
             summary: commit.summary().unwrap_or("").to_owned(),
@@ -245,14 +266,7 @@ fn do_cherrypick<'a, 'b>(
     }
 
     let new_msg = match commit.message() {
-        Some(orig_msg) => {
-            let orig_msg = filter_commit_msg(orig_msg, opts);
-            if orig_msg.ends_with("\n") {
-                format!("{}\n{}\n", orig_msg, tag)
-            } else {
-                format!("{}\n\n{}\n", orig_msg, tag)
-            }
-        }
+        Some(orig_msg) => update_commit_msg(orig_msg, &tag, opts),
         None => tag,
     };
     // if the first parent is the branch's head, then directly
