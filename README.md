@@ -20,8 +20,11 @@ commits are properly copied if possible (see [uprooting](#Uprooting) for more de
 
 ```console
 $ cargo build --release
-$ cargo install
+$ cargo install --path .
 ```
+
+**ripit** requires rust 2018, so the version of _rust_ / _cargo_ should be
+greater than 1.31.
 
 ## Use
 
