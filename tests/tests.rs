@@ -317,7 +317,7 @@ fn test_uproot_sync_with_conflicts() {
 #[test]
 fn test_uproot_merge() {
     let env = env::TestEnv::new(false);
-    env.setup_merge_uproot();
+    env.setup_merge_uproot(false);
 
     // start syncing from c2
     let c2 = env.remote_repo.revparse_single("c2").unwrap();
@@ -354,4 +354,63 @@ fn test_uproot_merge() {
     let parents: Vec<git2::Commit> = parents[0].parents().collect();
     assert_eq!(parents.len(), 1);
     assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+}
+
+/// Test resync from uprooted merge
+///
+/// When syncing from an uprooted merge, the comparison of the list of commits
+/// to sync will include commits from both parents of the merge. They must
+/// be properly considered as already synced.
+///
+///             --> C3 --
+///            /         \
+///    --> C1 ----> CX ----> C4 ---
+///   /        \                   \
+/// C0 ----------> C2 (bootstrap) ----> C5 (sync)
+///
+#[test]
+fn test_resync_uprooted_merge() {
+    let env = env::TestEnv::new(false);
+    env.setup_merge_uproot(true);
+
+    // start syncing from c2
+    let c2 = env.remote_repo.revparse_single("c2").unwrap();
+    env.remote_repo.reset_hard(&c2);
+    env.run_ripit_success(&["--bootstrap"]);
+
+    // then sync c5, should uproot C4 which is a merge commit, but keep it as a merge commit
+    let c5 = env.remote_repo.revparse_single("c5").unwrap();
+    env.remote_repo.reset_hard(&c5);
+    env.run_ripit_success(&["-yu"]);
+
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+    assert!(head_ci.summary().unwrap().contains("c5"));
+    assert!(!head_ci.message().unwrap().contains("uprooted"));
+
+    let parents: Vec<git2::Commit> = head_ci.parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+    assert!(parents[1].summary().unwrap().contains("c4"));
+    assert!(parents[1].message().unwrap().contains("uprooted"));
+    let c4 = &parents[1];
+
+    let parents: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("cx"));
+    assert!(parents[0].message().unwrap().contains("uprooted"));
+    assert!(parents[1].summary().unwrap().contains("c3"));
+    assert!(parents[1].message().unwrap().contains("uprooted"));
+
+    // when syncing from C4, (as if a conflict was present in C4), we should not
+    // consider C3 as to be synced.
+    env.local_repo.set_head_detached(c4.id()).unwrap();
+    env.local_repo.branch("master", &c4, true).unwrap();
+    env.run_ripit_success(&["-y"]);
+
+    // The sync will have created a new C5
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+    assert!(head_ci.summary().unwrap().contains("c5"));
+    assert!(!head_ci.message().unwrap().contains("uprooted"));
 }

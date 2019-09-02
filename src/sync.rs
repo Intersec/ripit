@@ -1,7 +1,7 @@
 use crate::app;
 use crate::error::Error;
 use crate::util;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
@@ -70,7 +70,8 @@ fn build_commits_map<'a>(
     revwalk.push(last_commit.id())?;
 
     for oid in revwalk {
-        let commit = repo.find_commit(oid?)?;
+        let oid = oid?;
+        let commit = repo.find_commit(oid)?;
 
         // a commit missing a tag could be an error too. By ignoring it, it will lead to errors
         // if it is a parent of a commit to sync.
@@ -116,11 +117,12 @@ fn find_commits_to_sync<'a>(
     repo: &'a git2::Repository,
     local_commit: git2::Oid,
     remote_commit: &git2::Object,
+    commits_map: &CommitsMap,
     opts: &app::Options,
 ) -> Result<Vec<git2::Commit<'a>>, Error> {
     let mut start = local_commit;
-    let mut uprooted_remote_ids = HashSet::new();
     let mut last_tag;
+    let mut cnt = 0;
 
     // walk backwards until a non-uprooted commit is reached
     loop {
@@ -131,15 +133,12 @@ fn find_commits_to_sync<'a>(
             // The bootstrap is not uprooted, the loop cannot be infinite
             break;
         }
-        uprooted_remote_ids.insert(git2::Oid::from_str(&last_tag)?);
+        cnt += 1;
         start = ci.parent_id(0)?;
     }
     if opts.verbose {
-        if uprooted_remote_ids.len() > 0 {
-            println!(
-                "Rewinding {} commits to ignore uprooted ones.",
-                uprooted_remote_ids.len()
-            );
+        if cnt > 0 {
+            println!("Rewinding {} commits to ignore uprooted ones.", cnt);
         }
         println!("Found ripit tag, last synced commit was {}.", last_tag);
     }
@@ -151,10 +150,10 @@ fn find_commits_to_sync<'a>(
     let mut commits = vec![];
     for oid in revwalk {
         let oid = oid?;
-        if !uprooted_remote_ids.contains(&oid) {
+        if !commits_map.contains_key(&oid) {
             commits.push(repo.find_commit(oid)?);
         } else if opts.verbose {
-            println!("Ignoring {}: uprooted commit already synchronized.", oid);
+            println!("Ignoring {}: commit already synchronized.", oid);
         }
     }
 
@@ -381,7 +380,13 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
     let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, opts.branch))?;
 
     // Build revwalk from specified commit up to last commit in branch in remote
-    let commits = find_commits_to_sync(&repo, local_commit.id(), &remote_branch, &opts)?;
+    let commits = find_commits_to_sync(
+        &repo,
+        local_commit.id(),
+        &remote_branch,
+        &commits_map,
+        &opts,
+    )?;
 
     if commits.len() == 0 {
         println!(

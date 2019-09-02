@@ -314,11 +314,11 @@ filters:
     ///
     ///             --> C3 --
     ///            /         \
-    ///    --> C1 -------------> C4 ---
+    ///    --> C1 ---> (CX) ---> C4 ---
     ///   /        \                   \
     /// C0 ----------> C2 ----------------> C5
     ///
-    pub fn setup_merge_uproot(&self) {
+    pub fn setup_merge_uproot(&self, add_cx: bool) {
         let c0 = self.remote_repo.commit_file_and_tag("c0", "c0");
         let c1 = self.remote_repo.commit_file_and_tag("c1", "c1");
         self.remote_repo.reset_hard(c0.as_object());
@@ -327,6 +327,9 @@ filters:
         self.remote_repo.reset_hard(c1.as_object());
         let c3 = self.remote_repo.commit_file_and_tag("c3", "c3");
         self.remote_repo.reset_hard(c1.as_object());
+        if add_cx {
+            self.remote_repo.commit_file_and_tag("cx", "cx");
+        }
         let c4 = self.remote_repo.do_merge(&c3, "c4");
 
         self.remote_repo.reset_hard(c2.as_object());
