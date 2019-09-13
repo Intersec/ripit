@@ -1,7 +1,8 @@
 use crate::app;
+use crate::commits_map::{CommitsMap, SyncedCommit};
 use crate::error::Error;
+use crate::tag;
 use crate::util;
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
@@ -14,77 +15,6 @@ pub fn update_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(),
         println!("Fetch branch {} in remote {}...", opts.branch, opts.remote);
     }
     remote.fetch(&[&opts.branch], None, None)
-}
-
-// }}}
-// {{{ Build commits map */
-struct SyncedCommit<'a> {
-    commit: git2::Commit<'a>,
-    uprooted: bool,
-}
-
-type CommitsMap<'a> = HashMap<git2::Oid, SyncedCommit<'a>>;
-
-/// Parse the commit message to retrieve the SHA-1 stored as a ripit tag
-///
-/// If the commit message contains the string "rip-it: <sha-1>", the sha-1 is returned
-fn retrieve_ripit_tag(commit: &git2::Commit) -> Option<(String, bool)> {
-    let msg = commit.message()?;
-    let tag_index = msg.find("rip-it: ")?;
-    let sha1_start = tag_index + 8;
-
-    if msg.len() >= sha1_start + 40 {
-        let sha1 = msg[(sha1_start)..(sha1_start + 40)].to_owned();
-        let sha1_end = &msg[(sha1_start + 40)..];
-
-        Some((sha1, sha1_end.starts_with(" uprooted")))
-    } else {
-        None
-    }
-}
-
-fn retrieve_ripit_tag_or_throw(commit: &git2::Commit) -> Result<(String, bool), Error> {
-    match retrieve_ripit_tag(&commit) {
-        Some(v) => Ok(v),
-        // FIXME: this error should mention the commit oid
-        None => Err(Error::TagMissing),
-    }
-}
-
-fn format_ripit_tag(commit: &git2::Commit, uprooted: bool) -> String {
-    format!(
-        "rip-it: {}{}",
-        commit.id(),
-        if uprooted { " uprooted" } else { "" }
-    )
-}
-
-fn build_commits_map<'a>(
-    repo: &'a git2::Repository,
-    last_commit: &git2::Commit,
-) -> Result<CommitsMap<'a>, Error> {
-    let mut map = CommitsMap::new();
-
-    // build revwalk from the first commit of the repo up to the provided commit
-    let mut revwalk = repo.revwalk()?;
-    revwalk.push(last_commit.id())?;
-
-    for oid in revwalk {
-        let oid = oid?;
-        let commit = repo.find_commit(oid)?;
-
-        // a commit missing a tag could be an error too. By ignoring it, it will lead to errors
-        // if it is a parent of a commit to sync.
-        let (tag, uprooted) = match retrieve_ripit_tag(&commit) {
-            Some(tag) => tag,
-            None => continue,
-        };
-        let remote_oid = git2::Oid::from_str(&tag)?;
-
-        map.insert(remote_oid, SyncedCommit { commit, uprooted });
-    }
-
-    Ok(map)
 }
 
 // }}}
@@ -127,7 +57,7 @@ fn find_commits_to_sync<'a>(
     // walk backwards until a non-uprooted commit is reached
     loop {
         let ci = repo.find_commit(start)?;
-        let (tag, uprooted) = retrieve_ripit_tag_or_throw(&ci)?;
+        let (tag, uprooted) = tag::retrieve_ripit_tag_or_throw(&ci)?;
         last_tag = tag;
         if !uprooted {
             // The bootstrap is not uprooted, the loop cannot be infinite
@@ -150,7 +80,7 @@ fn find_commits_to_sync<'a>(
     let mut commits = vec![];
     for oid in revwalk {
         let oid = oid?;
-        if !commits_map.contains_key(&oid) {
+        if !commits_map.contains_key(oid) {
             commits.push(repo.find_commit(oid)?);
         } else if opts.verbose {
             println!("Ignoring {}: commit already synchronized.", oid);
@@ -241,7 +171,7 @@ fn do_cherrypick<'a, 'b>(
     }
     force_checkout_head(&repo)?;
 
-    let tag = format_ripit_tag(commit, uprooted);
+    let tag = tag::format_ripit_tag(commit, uprooted);
 
     // cherrypick changes on top of HEAD
     let mut cherrypick_opts = git2::CherrypickOptions::new();
@@ -329,7 +259,7 @@ fn copy_commit<'a, 'b>(
     let mut uprooted = true;
     let is_merge = commit.parent_count() > 1;
     for parent_id in commit.parent_ids() {
-        match commits_map.get(&parent_id) {
+        match commits_map.get(parent_id) {
             Some(parent_ci) => {
                 local_parents.push(&parent_ci.commit);
                 // A commit with uprooted parents is uprooted
@@ -374,7 +304,7 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
     // FIXME: we really should not do this on every execution. We should either build a database,
     // or have a "daemon" behavior. This is broken because commits not directly addressable from
     // the branch may be synced but won't be remapped in this map.
-    let mut commits_map = build_commits_map(repo, &local_commit)?;
+    let mut commits_map = CommitsMap::new(repo, local_commit.id())?;
 
     // Get the branch last commit in the remote
     let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, opts.branch))?;

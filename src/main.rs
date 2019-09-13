@@ -1,6 +1,8 @@
 mod app;
+mod commits_map;
 mod error;
 mod sync;
+mod tag;
 mod util;
 
 /// Check that the local repo does not contain any staged or unstaged changes
