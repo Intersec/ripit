@@ -62,8 +62,11 @@ fn test_basic_sync() {
     // check the tags are valid
     let mut remote_revwalk = env.remote_repo.revwalk().unwrap();
     remote_revwalk.push_head().unwrap();
+    remote_revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE);
     let mut local_revwalk = env.local_repo.revwalk().unwrap();
     local_revwalk.push_head().unwrap();
+    local_revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE);
+    let mut expected_cache = String::new();
 
     for (remote_ci, local_ci) in remote_revwalk.zip(local_revwalk) {
         let remote_commit = env.remote_repo.find_commit(remote_ci.unwrap()).unwrap();
@@ -72,7 +75,15 @@ fn test_basic_sync() {
         let pattern = format!("rip-it: {}", remote_commit.id());
 
         assert!(local_msg.contains(&pattern));
+
+        // cache will contain the ids of copied commits
+        expected_cache.push_str(&format!("{}\n", local_commit.id()));
     }
+
+    // check the cache file contains the synced ids
+    let path = env.local_repo.workdir().unwrap().join(".ripit-cache");
+    let contents = std::fs::read_to_string(path).unwrap();
+    assert_eq!(contents, expected_cache);
 }
 
 /// Test that exec is aborted if local changes are present
@@ -408,11 +419,12 @@ fn test_resync_uprooted_merge() {
     env.local_repo.branch("master", &c4, true).unwrap();
     env.run_ripit_success(&["-y"]);
 
-    // The sync will have created a new C5
+    // The sync will not have created a new C5, due to the cache file
     let head_tgt = env.local_repo.head().unwrap().target().unwrap();
     let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
-    assert!(head_ci.summary().unwrap().contains("c5"));
-    assert!(!head_ci.message().unwrap().contains("uprooted"));
+    assert!(head_ci.summary().unwrap().contains("c4"));
+
+    // TODO: test removing the cache file, then syncing
 }
 
 /// Test sync of merge solving conflicts
@@ -510,6 +522,98 @@ fn test_uproot_merge_with_conflicts() {
     let parents: Vec<git2::Commit> = parents[1].parents().collect();
     assert_eq!(parents.len(), 1);
     assert!(parents[0].summary().unwrap().contains("c2"));
+
+    let parents: Vec<git2::Commit> = parents[0].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+}
+
+/// Test that some situations requires a cache file to solve.
+///
+/// Remote is:
+///                            -> C2 --
+///                           /        \
+///    --> CB ------------> C1 -> C3 ----> C4 -
+///   /        \              \                \
+/// CA ----------> CC -> C0 -----> C5 ------------> C6
+///
+/// Bootstrap on C0, then sync C5:
+///     --> C1 --
+///    /         \
+///  B  ----------->  C5
+/// Then sync C6:
+/// * it will conflict on C2 and C3.
+/// * The only way to keep syncing C4 is to know both C2 and C3, and one of them is
+///   no longer reachable from master or HEAD.
+/// * A external cache is required.
+#[test]
+fn test_cache_file() {
+    let env = env::TestEnv::new(false);
+    env.setup_symmetric_conflict();
+
+    let c0 = env.remote_repo.revparse_single("c0").unwrap();
+    env.remote_repo.reset_hard(&c0);
+    env.run_ripit_success(&["--bootstrap"]);
+
+    // then sync c5, with uprooting
+    let c5 = env.remote_repo.revparse_single("c5").unwrap();
+    env.remote_repo.reset_hard(&c5);
+    env.run_ripit_success(&["-yu"]);
+
+    let c6 = env.remote_repo.revparse_single("c6").unwrap();
+    env.remote_repo.reset_hard(&c6);
+    // conflict on C2
+    env.run_ripit_failure(&["-yu"], Some("due to conflicts"));
+    env.local_repo.resolve_conflict_and_commit("cb");
+    // conflict on C3
+    env.run_ripit_failure(&["-yu"], Some("due to conflicts"));
+    env.local_repo.resolve_conflict_and_commit("cb");
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let c3 = env.local_repo.find_commit(head_tgt).unwrap();
+
+    // rename the cache file, to test the synchronization will be wrong
+    let cache_path = Path::new(env.local_repo.workdir().unwrap()).join(".ripit-cache");
+    let bkp_path = Path::new(env.local_repo.workdir().unwrap()).join(".ripit-cache.bkp");
+    fs::rename(&cache_path, &bkp_path).unwrap();
+
+    // it will try to synchronize c3 again
+    env.run_ripit_failure(&["-yu"], Some("due to conflicts:\n  c3"));
+    env.local_repo.reset_hard(&c3.as_object());
+
+    // set the cache file again
+    fs::rename(&bkp_path, &cache_path).unwrap();
+    // conflict on C4
+    env.run_ripit_failure(&["-yu"], Some("due to conflicts:\n  c4"));
+    env.local_repo.resolve_conflict_and_commit("cb");
+
+    env.run_ripit_success(&["-yu"]);
+
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+    assert!(head_ci.summary().unwrap().contains("c6"));
+
+    let parents: Vec<git2::Commit> = head_ci.parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("c5"));
+    assert!(parents[1].summary().unwrap().contains("c4"));
+
+    let parents0: Vec<git2::Commit> = parents[0].parents().collect();
+    assert_eq!(parents0.len(), 2);
+    assert!(parents0[0].summary().unwrap().contains("Bootstrap"));
+    assert!(parents0[1].summary().unwrap().contains("c1"));
+
+    let parents1: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents1.len(), 2);
+    assert!(parents1[0].summary().unwrap().contains("c3"));
+    assert!(parents1[1].summary().unwrap().contains("c2"));
+
+    let parents: Vec<git2::Commit> = parents1[0].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("c1"));
+
+    let parents: Vec<git2::Commit> = parents1[1].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("c1"));
 
     let parents: Vec<git2::Commit> = parents[0].parents().collect();
     assert_eq!(parents.len(), 1);

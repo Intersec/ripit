@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub enum Error {
@@ -35,6 +36,23 @@ pub enum Error {
     },
     // Cannot setup the merge context after conflicts
     CannotSetupMergeCtx,
+    // I/O Error whe opening cache file
+    CacheOpenError {
+        err: std::io::Error,
+        filename: PathBuf,
+    },
+    // I/O Error while reading cache file
+    CacheReadError {
+        err: std::io::Error,
+        filename: PathBuf,
+    },
+    // Invalid line in cache file
+    CacheInvalidLine {
+        desc: String,
+        filename: PathBuf,
+        line: String,
+        line_number: u32,
+    }
 }
 
 impl From<git2::Error> for Error {
@@ -87,6 +105,16 @@ impl fmt::Display for Error {
                  Solve the errors listed above, then abort the current commit \
                  and run the synchronization again."
             ),
+            Error::CacheOpenError { err, filename } => {
+                write!(f, "Cannot open cache file {}: {}", filename.display(), err)
+            },
+            Error::CacheReadError { err, filename } => {
+                write!(f, "Error while reading cache file {}: {}", filename.display(), err)
+            },
+            Error::CacheInvalidLine { desc, filename, line, line_number } => {
+                write!(f, "{}:{}: line \"{}\" is invalid: {}", filename.display(), line_number,
+                line, desc)
+            }
         }
     }
 }

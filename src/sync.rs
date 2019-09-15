@@ -338,11 +338,8 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
     //
     // This is used to find the parents of each commits to sync, and thus properly
     // recreate the same topology.
-    // FIXME: we really should not do this on every execution. We should either build a database,
-    // or have a "daemon" behavior. This is broken because commits not directly addressable from
-    // the branch may be synced but won't be remapped in this map.
     // This map is saved in a file in the local repository.
-    let mut commits_map = CommitsMap::new();
+    let mut commits_map = CommitsMap::new(repo)?;
 
     // fill map from synced branch.
     let local_commit = repo.revparse_single(&opts.branch)?.peel_to_commit()?;

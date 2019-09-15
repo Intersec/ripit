@@ -378,6 +378,36 @@ filters:
         self.remote_repo.do_merge(&c3, "c5");
     }
 
+    /// Setup symmetric conflict
+    ///
+    ///                            -> C2 --
+    ///                           /        \
+    ///    --> CB ------------> C1 -> C3 ----> C4 -
+    ///   /        \              \                \
+    /// CA ----------> CC -> C0 -----> C5 ------------> C6
+    ///
+    /// C2, C3, CB and C0 modifies the same file "cb". When uprooting, we will apply changes on
+    /// C0's version, instead of CB, causing conflicts
+    ///
+    pub fn setup_symmetric_conflict(&self) {
+        let ca = self.remote_repo.commit_file_and_tag("ca", "ca");
+        let cb = self.remote_repo.commit_file_and_tag("cb", "cb");
+        self.remote_repo.reset_hard(ca.as_object());
+        self.remote_repo.do_merge(&cb, "cc");
+        let c0 = self.remote_repo.commit_file_and_tag("cb", "c0");
+        self.remote_repo.reset_hard(cb.as_object());
+        let c1 = self.remote_repo.commit_file_and_tag("c1", "c1");
+        let c2 = self.remote_repo.commit_file_and_tag("cb", "c2");
+
+        self.remote_repo.reset_hard(c1.as_object());
+        self.remote_repo.commit_file_and_tag("cb", "c3");
+        let c4 = self.remote_repo.do_merge(&c2, "c4");
+
+        self.remote_repo.reset_hard(c0.as_object());
+        self.remote_repo.do_merge(&c1, "c5");
+        self.remote_repo.do_merge(&c4, "c6");
+    }
+
     fn run_ripit(&self, successful: bool, args: &[&str], err_msg: Option<&str>) {
         let mut args = args.to_vec();
         args.push(&self.cfg_path);
