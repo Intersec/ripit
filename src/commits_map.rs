@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::tag;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 pub struct SyncedCommit<'a> {
     pub commit: git2::Commit<'a>,
@@ -15,12 +16,18 @@ pub struct CommitsMap<'a> {
 }
 
 impl<'a> CommitsMap<'a> {
-    pub fn new(repo: &'a git2::Repository, last_commit_id: git2::Oid) -> Result<Self, Error> {
-        let mut map = Map::new();
+    pub fn new() -> Self {
+        Self { map: Map::new() }
+    }
 
+    pub fn fill_from_commit(
+        &mut self,
+        repo: &'a git2::Repository,
+        commit_id: git2::Oid,
+    ) -> Result<(), Error> {
         // build revwalk from the first commit of the repo up to the provided commit
         let mut revwalk = repo.revwalk()?;
-        revwalk.push(last_commit_id)?;
+        revwalk.push(commit_id)?;
 
         for oid in revwalk {
             let oid = oid?;
@@ -34,10 +41,13 @@ impl<'a> CommitsMap<'a> {
             };
             let remote_oid = git2::Oid::from_str(&tag)?;
 
-            map.insert(remote_oid, SyncedCommit { commit, uprooted });
+            if !self.insert(remote_oid, SyncedCommit { commit, uprooted }) {
+                // entry was already in the map, no need to continue
+                break;
+            }
         }
 
-        Ok(Self { map })
+        Ok(())
     }
 
     pub fn contains_key(&self, oid: git2::Oid) -> bool {
@@ -48,7 +58,13 @@ impl<'a> CommitsMap<'a> {
         self.map.get(&oid)
     }
 
-    pub fn insert(&mut self, oid: git2::Oid, val: SyncedCommit<'a>) {
-        self.map.insert(oid, val);
+    pub fn insert(&mut self, oid: git2::Oid, val: SyncedCommit<'a>) -> bool {
+        match self.map.entry(oid) {
+            Entry::Occupied(_) => false,
+            Entry::Vacant(v) => {
+                v.insert(val);
+                true
+            }
+        }
     }
 }

@@ -295,8 +295,6 @@ fn copy_commit<'a, 'b>(
 
 /// Sync the local repository with the new changes from the given remote
 pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(), Error> {
-    let local_commit = repo.revparse_single(&opts.branch)?.peel_to_commit()?;
-
     // Build map of remote commit sha-1 => local commit
     //
     // This is used to find the parents of each commits to sync, and thus properly
@@ -304,7 +302,15 @@ pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> 
     // FIXME: we really should not do this on every execution. We should either build a database,
     // or have a "daemon" behavior. This is broken because commits not directly addressable from
     // the branch may be synced but won't be remapped in this map.
-    let mut commits_map = CommitsMap::new(repo, local_commit.id())?;
+    // This map is saved in a file in the local repository.
+    let mut commits_map = CommitsMap::new();
+
+    // fill map from synced branch.
+    let local_commit = repo.revparse_single(&opts.branch)?.peel_to_commit()?;
+    commits_map.fill_from_commit(repo, local_commit.id())?;
+    // Fill map from HEAD
+    let head_id = repo.head().unwrap().target().unwrap();
+    commits_map.fill_from_commit(repo, head_id)?;
 
     // Get the branch last commit in the remote
     let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, opts.branch))?;
