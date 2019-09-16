@@ -33,6 +33,8 @@ pub enum Error {
         field: &'static str,
         error: regex::Error,
     },
+    // Cannot setup the merge context after conflicts
+    CannotSetupMergeCtx,
 }
 
 impl From<git2::Error> for Error {
@@ -79,6 +81,12 @@ impl fmt::Display for Error {
             Error::InvalidConfig { field, error } => {
                 write!(f, "Invalid {} option: {}", field, error)
             }
+            Error::CannotSetupMergeCtx => write!(
+                f,
+                "Cannot setup the environment for the resolution of conflicts.\n\
+                 Solve the errors listed above, then abort the current commit \
+                 and run the synchronization again."
+            ),
         }
     }
 }

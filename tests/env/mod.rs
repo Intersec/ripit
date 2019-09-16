@@ -96,7 +96,21 @@ impl TestRepo {
         // This is to simulate what "git commit" would do
         let path = Path::new(self.path()).join("MERGE_MSG");
         let content = std::fs::read_to_string(path).unwrap();
-        self.do_commit(&content)
+
+        // In addition, get possible second parent from MERGE_HEAD
+        let path = Path::new(self.path()).join("MERGE_HEAD");
+        let merge_head = std::fs::read_to_string(&path);
+        match merge_head {
+            Ok(s) => {
+                let oid = git2::Oid::from_str(s.trim()).unwrap();
+                let snd_parent = self.find_commit(oid).unwrap();
+
+                let ci = self.do_merge_commit(&snd_parent, &content);
+                std::fs::remove_file(&path).unwrap();
+                ci
+            }
+            Err(_) => self.do_commit(&content),
+        }
     }
 
     /// Commit a file, and tag the commit (the tag name and the files content are the same)
@@ -123,7 +137,7 @@ impl TestRepo {
     }
 
     /// Do a commit-merge of the given commit in HEAD
-    fn do_merge(&self, theirs: &git2::Commit, content: &str) -> git2::Commit {
+    fn do_merge_commit(&self, theirs: &git2::Commit, content: &str) -> git2::Commit {
         let annotated_theirs = self.find_annotated_commit(theirs.id()).unwrap();
         self.merge(&[&annotated_theirs], None, None).unwrap();
 
@@ -170,9 +184,14 @@ impl TestRepo {
             )
             .unwrap();
         let ci = self.find_commit(commit_oid).unwrap();
-        self.tag_lightweight(content, ci.as_object(), true).unwrap();
 
         self.force_checkout_head();
+        ci
+    }
+
+    fn do_merge(&self, theirs: &git2::Commit, content: &str) -> git2::Commit {
+        let ci = self.do_merge_commit(theirs, content);
+        self.tag_lightweight(content, ci.as_object(), true).unwrap();
         ci
     }
 
@@ -334,6 +353,29 @@ filters:
 
         self.remote_repo.reset_hard(c2.as_object());
         self.remote_repo.do_merge(&c4, "c5");
+    }
+
+    /// Setup merge commit resolving conflitcs
+    ///
+    ///      -> C1 --
+    ///     /        \
+    ///    ---> C2 -----> C3 -
+    ///   /                   \
+    /// C0 -------> C4 ---------> C5
+    ///
+    /// C1, C2 and C4 conflicts
+    ///
+    pub fn setup_merge_solving_conflicts(&self) {
+        let c0 = self.remote_repo.commit_file_and_tag("c0", "c0");
+        let c1 = self.remote_repo.commit_file_and_tag("c1", "c1");
+
+        self.remote_repo.reset_hard(c0.as_object());
+        self.remote_repo.commit_file_and_tag("c1", "c2");
+        let c3 = self.remote_repo.do_merge(&c1, "c3");
+
+        self.remote_repo.reset_hard(c0.as_object());
+        self.remote_repo.commit_file_and_tag("c1", "c4");
+        self.remote_repo.do_merge(&c3, "c5");
     }
 
     fn run_ripit(&self, successful: bool, args: &[&str], err_msg: Option<&str>) {

@@ -152,6 +152,39 @@ fn update_merge_msg(repo: &git2::Repository, tag: &str, opts: &app::Options) {
     }
 }
 
+/// Fix the context saved in the .git directory, to indicate the commit is a merge
+///
+/// As we use a cherry-pick to bring changes without bringing the whole tree of the uprooted
+/// commit, git saves a cherry-pick context in the .git directory, which means that when the user
+/// commits the change, it will create a merge with a single parent, instead of the proper merge
+/// commit.
+/// To fix this, the context is modified directly in the .git directory. Yes, this is very ugly :/
+fn fix_merge_ctx(repo: &git2::Repository, commit_id: git2::Oid) -> bool {
+    // Remove CHERRY_PICK_HEAD
+    let path = repo.path().join("CHERRY_PICK_HEAD");
+    if let Err(err) = std::fs::remove_file(&path) {
+        eprintln!("Cannot remove {}: {}", path.display(), err);
+        return false;
+    }
+
+    // Create MERGE_HEAD, containing the id of the commit brought by the merge
+    let path = repo.path().join("MERGE_HEAD");
+    let mut file = match std::fs::File::create(&path) {
+        Ok(f) => f,
+        Err(err) => {
+            eprintln!("Cannot create {}: {}", path.display(), err);
+            return false;
+        }
+    };
+
+    if let Err(err) = writeln!(file, "{}", commit_id) {
+        eprintln!("Cannot write in {}: {}", path.display(), err);
+        return false;
+    }
+
+    true
+}
+
 fn do_cherrypick<'a, 'b>(
     repo: &'a git2::Repository,
     commit: &'b git2::Commit,
@@ -188,6 +221,12 @@ fn do_cherrypick<'a, 'b>(
         //  - apply the filters
         //  - add the ripit-tag
         update_merge_msg(repo, &tag, &opts);
+
+        if is_merge && local_parents.len() > 1 {
+            if !fix_merge_ctx(repo, local_parents[1].id()) {
+               return Err(Error::CannotSetupMergeCtx);
+            }
+        }
 
         return Err(Error::HasConflicts {
             summary: commit.summary().unwrap_or("").to_owned(),

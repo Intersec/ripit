@@ -414,3 +414,104 @@ fn test_resync_uprooted_merge() {
     assert!(head_ci.summary().unwrap().contains("c5"));
     assert!(!head_ci.message().unwrap().contains("uprooted"));
 }
+
+/// Test sync of merge solving conflicts
+#[test]
+fn test_merge_solving_conflicts() {
+    let env = env::TestEnv::new(false);
+    env.setup_merge_solving_conflicts();
+
+    let c0 = env.remote_repo.revparse_single("c0").unwrap();
+    env.remote_repo.reset_hard(&c0);
+    env.run_ripit_success(&["--bootstrap"]);
+
+    // then sync c3, should sync all commits properly, without issues
+    let c3 = env.remote_repo.revparse_single("c3").unwrap();
+    env.remote_repo.reset_hard(&c3);
+    env.run_ripit_success(&["-y"]);
+
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+    assert!(head_ci.summary().unwrap().contains("c3"));
+
+    let parents: Vec<git2::Commit> = head_ci.parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("c2"));
+    assert!(parents[1].summary().unwrap().contains("c1"));
+
+    let parents0: Vec<git2::Commit> = parents[0].parents().collect();
+    assert_eq!(parents0.len(), 1);
+    assert!(parents0[0].summary().unwrap().contains("Bootstrap"));
+
+    let parents1: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents1.len(), 1);
+    assert!(parents1[0].summary().unwrap().contains("Bootstrap"));
+}
+
+/// Test uproot of merge with conflicts
+///
+/// Test the behavior when uprooting a merge commit bring conflicts.
+///
+/// Remote is:
+///        -> C1 --
+///       /        \
+///      ---> C2 -----> C3 -
+///     /                   \
+///   C0 -------> C4 ---------> C5
+///
+/// Bootstrap is on C4, then sync on C5. Uprooting C3 will bring conflicts.
+/// End result should be:
+///             -> C1 --
+///            /        \
+///      ---> C2 ---------> C3 -
+///     /                       \
+///    B --------------------------> C5
+#[test]
+fn test_uproot_merge_with_conflicts() {
+    let env = env::TestEnv::new(false);
+    env.setup_merge_solving_conflicts();
+
+    let c4 = env.remote_repo.revparse_single("c4").unwrap();
+    env.remote_repo.reset_hard(&c4);
+    env.run_ripit_success(&["--bootstrap"]);
+
+    let c5 = env.remote_repo.revparse_single("c5").unwrap();
+    env.remote_repo.reset_hard(&c5);
+
+    // conflicts on C2
+    env.run_ripit_failure(&["-yu"], Some("due to conflicts"));
+    env.local_repo.resolve_conflict_and_commit("c1");
+
+    // conflicts on C1
+    env.run_ripit_failure(&["-yu"], Some("due to conflicts"));
+    env.local_repo.resolve_conflict_and_commit("c1");
+
+    // conflicts on C3
+    env.run_ripit_failure(&["-yu"], Some("due to conflicts"));
+    env.local_repo.resolve_conflict_and_commit("c1");
+
+    // sync C5
+    env.run_ripit_success(&["-y"]);
+
+    let head_tgt = env.local_repo.head().unwrap().target().unwrap();
+    let head_ci = env.local_repo.find_commit(head_tgt).unwrap();
+    assert!(head_ci.summary().unwrap().contains("c5"));
+
+    let parents: Vec<git2::Commit> = head_ci.parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+    assert!(parents[1].summary().unwrap().contains("c3"));
+
+    let parents: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents.len(), 2);
+    assert!(parents[0].summary().unwrap().contains("c2"));
+    assert!(parents[1].summary().unwrap().contains("c1"));
+
+    let parents: Vec<git2::Commit> = parents[1].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("c2"));
+
+    let parents: Vec<git2::Commit> = parents[0].parents().collect();
+    assert_eq!(parents.len(), 1);
+    assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+}
