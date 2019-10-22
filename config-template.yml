@@ -5,9 +5,10 @@
 # Name of the remote containing the commits to copy
 #remote: private
 
-# Branch to synchronize
+# Branches to synchronize
 # If unset, 'master' is used
-#branch: master
+#branches:
+#  - master
 
 # Filter applied on the messages of copied commits.
 # Lines in the commit message that matches the filter will not

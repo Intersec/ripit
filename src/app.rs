@@ -1,15 +1,21 @@
 use crate::error;
 use serde::Deserialize;
 
+pub struct Branch {
+    // name of the branch to synchronize
+    pub name: String,
+    // full ref name for the local branch
+    pub refname: String,
+}
+
 pub struct Options {
     // path to the local repo
     pub repo: String,
-    // name of the branch to synchronize
-    pub branch: String,
-    // full ref name for the local branch
-    pub branch_ref: String,
     // name of the remote to synchronize from
     pub remote: String,
+
+    // branches to synchronize
+    pub branches: Vec<Branch>,
 
     pub commit_msg_filters: regex::RegexSet,
 
@@ -23,7 +29,9 @@ pub struct Options {
 struct YamlCfg {
     repo: Option<String>,
     remote: String,
+    // TODO:  add uproot option per branch
     branch: Option<String>,
+    branches: Option<Vec<String>>,
     filters: Option<Vec<String>>,
 }
 
@@ -53,8 +61,19 @@ pub fn parse_args() -> Result<Options, error::Error> {
             })
         }
     };
+    // backward compatibility on legacy branch option
     let branch = cfg.branch.unwrap_or("master".to_owned());
-    let branch_ref = format!("refs/heads/{}", &branch);
+    let mut branches = cfg.branches.unwrap_or(vec![]);
+    if branches.len() == 0 {
+        branches.push(branch);
+    }
+    let branches = branches
+        .into_iter()
+        .map(|name| {
+            let refname = format!("refs/heads/{}", name);
+            Branch { name, refname }
+        })
+        .collect();
 
     let filters = cfg.filters.unwrap_or(vec![]);
     let commit_msg_filters = match regex::RegexSet::new(&filters) {
@@ -70,8 +89,7 @@ pub fn parse_args() -> Result<Options, error::Error> {
     Ok(Options {
         repo: cfg.repo.unwrap_or(".".to_owned()),
         remote: cfg.remote,
-        branch,
-        branch_ref,
+        branches,
         commit_msg_filters,
 
         bootstrap: matches.is_present("bootstrap"),

@@ -38,16 +38,25 @@ fn _main() -> Result<(), error::Error> {
     // fetch last commits in remote
     sync::update_remote(&repo, &opts)?;
 
-    if opts.bootstrap {
-        // bootstrap the branch in the local repo with the state of the branch in the remote repo
-        sync::bootstrap_branch_with_remote(&repo, &opts)
-    } else {
-        let mut commits_map = commits_map::CommitsMap::new(&repo)?;
-        commits_map.fill_from_branch(&repo, &opts.branch)?;
+    let mut commits_map = commits_map::CommitsMap::new(&repo)?;
 
-        // sync local branch with remote by cherry-picking missing commits
-        sync::sync_branch_with_remote(&repo, &mut commits_map, &opts)
+    if opts.bootstrap {
+        for branch in &opts.branches {
+            // bootstrap the branch in the local repo with the state of the
+            // branch in the remote repo
+            sync::bootstrap_branch_with_remote(&repo, branch, &mut commits_map, &opts)?
+        }
+    } else {
+        for branch in &opts.branches {
+            commits_map.fill_from_branch(&repo, &branch.name)?;
+        }
+
+        for branch in &opts.branches {
+            // sync local branch with remote by cherry-picking missing commits
+            sync::sync_branch_with_remote(&repo, branch, &mut commits_map, &opts)?
+        }
     }
+    Ok(())
 }
 
 fn main() {

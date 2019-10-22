@@ -623,7 +623,7 @@ fn test_cache_file() {
 /// Test syncing of a specific branch
 #[test]
 fn test_sync_specific_branch() {
-    let env = env::TestEnv::new(Some("branch0"));
+    let env = env::TestEnv::new(Some(&["branch0"]));
     env.setup_branches();
 
     // local branch does not exist
@@ -656,6 +656,59 @@ fn test_sync_specific_branch() {
     let ci = branch.get().peel_to_commit().unwrap();
     assert!(ci.summary().unwrap().contains("c13"));
 
+    let branch = env
+        .local_repo
+        .find_branch("master", git2::BranchType::Local)
+        .unwrap();
+    let ci = branch.get().peel_to_commit().unwrap();
+    assert!(ci.summary().unwrap().contains("Bootstrap"));
+}
+
+/// Test syncing of multiple branches
+#[test]
+fn test_merge_multiple_branches() {
+    let env = env::TestEnv::new(Some(&["branch0", "branch1", "master"]));
+    env.setup_branches();
+
+    // bootstrap every branch on C1.
+    let c1 = env.remote_repo.revparse_single("c1").unwrap();
+    env.remote_repo.reset_hard(&c1);
+    let c1 = c1.peel_to_commit().unwrap();
+    env.remote_repo.branch("branch0", &c1, true).unwrap();
+    env.remote_repo.branch("branch1", &c1, true).unwrap();
+    env.run_ripit_success(&["--bootstrap"]);
+
+    // set back the remote branches on their respective commits
+    // then sync everything up to c8
+    let c13 = env.remote_repo.revparse_single("c13").unwrap();
+    env.remote_repo
+        .branch("branch0", &c13.peel_to_commit().unwrap(), true)
+        .unwrap();
+    let c10 = env.remote_repo.revparse_single("c10").unwrap();
+    env.remote_repo
+        .branch("branch1", &c10.peel_to_commit().unwrap(), true)
+        .unwrap();
+    let c8 = env.remote_repo.revparse_single("c8").unwrap();
+    env.remote_repo.reset_hard(&c8);
+
+    // launch ripit: every branch should have been updated
+    env.run_ripit_success(&["-y"]);
+
+    let branch = env
+        .local_repo
+        .find_branch("branch0", git2::BranchType::Local)
+        .unwrap();
+    let ci = branch.get().peel_to_commit().unwrap();
+    assert!(ci.summary().unwrap().contains("c13"));
+
+    let branch = env
+        .local_repo
+        .find_branch("branch1", git2::BranchType::Local)
+        .unwrap();
+    let ci = branch.get().peel_to_commit().unwrap();
+    assert!(ci.summary().unwrap().contains("c10"));
+
+    // FIXME: master was not updated
     let branch = env
         .local_repo
         .find_branch("master", git2::BranchType::Local)

@@ -11,10 +11,13 @@ use std::path::Path;
 pub fn update_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(), git2::Error> {
     let mut remote = repo.find_remote(&opts.remote)?;
 
-    if opts.verbose {
-        println!("Fetch branch {} in remote {}...", opts.branch, opts.remote);
+    for branch in &opts.branches {
+        if opts.verbose {
+            println!("Fetch branch {} in remote {}...", branch.name, opts.remote);
+        }
+        remote.fetch(&[&branch.name], None, None)?
     }
-    remote.fetch(&[&opts.branch], None, None)
+    Ok(())
 }
 
 // }}}
@@ -191,14 +194,15 @@ fn do_cherrypick<'a, 'b>(
     local_parents: &Vec<&'b git2::Commit>,
     is_merge: bool,
     uprooted: bool,
+    branch: &app::Branch,
     opts: &app::Options,
 ) -> Result<git2::Commit<'a>, Error> {
-    let branch_id = repo.refname_to_id(&opts.branch_ref)?;
+    let branch_id = repo.refname_to_id(&branch.refname)?;
     let update_branch = local_parents[0].id() == branch_id;
 
     // checkout parent, then cherrypick on top of it
     if update_branch {
-        repo.set_head(&opts.branch_ref)?;
+        repo.set_head(&branch.refname)?;
     } else {
         repo.set_head_detached(local_parents[0].id())?;
     }
@@ -240,7 +244,7 @@ fn do_cherrypick<'a, 'b>(
     // if the first parent is the branch's head, then directly
     // update the branch when committing
     let update_ref = if update_branch {
-        &opts.branch_ref
+        &branch.refname
     } else {
         "HEAD"
     };
@@ -270,8 +274,8 @@ fn do_cherrypick<'a, 'b>(
     // branch, and update the local branch, then synchronize the merge commit. We need to
     // fix the local branch back to the merge commit.
     if !update_branch && local_parents.iter().any(|p| p.id() == branch_id) {
-        repo.branch(&opts.branch, &new_commit, true)?;
-        repo.set_head(&opts.branch_ref)?;
+        repo.branch(&branch.name, &new_commit, true)?;
+        repo.set_head(&branch.refname)?;
     }
 
     // make the working directory match HEAD
@@ -285,6 +289,7 @@ fn copy_commit<'a, 'b>(
     repo: &'a git2::Repository,
     commit: &'b git2::Commit,
     commits_map: &'b CommitsMap,
+    branch: &app::Branch,
     opts: &app::Options,
 ) -> Result<SyncedCommit<'a>, Error> {
     let head;
@@ -327,7 +332,15 @@ fn copy_commit<'a, 'b>(
     }
 
     Ok(SyncedCommit {
-        commit: do_cherrypick(repo, commit, &local_parents, is_merge, uprooted, opts)?,
+        commit: do_cherrypick(
+            repo,
+            commit,
+            &local_parents,
+            is_merge,
+            uprooted,
+            branch,
+            opts,
+        )?,
         uprooted,
     })
 }
@@ -335,13 +348,14 @@ fn copy_commit<'a, 'b>(
 /// Sync the local repository with the new changes from the given remote
 pub fn sync_branch_with_remote<'a>(
     repo: &'a git2::Repository,
+    branch: &app::Branch,
     commits_map: &mut CommitsMap<'a>,
     opts: &app::Options,
 ) -> Result<(), Error> {
-    let local_commit = repo.revparse_single(&opts.branch)?.peel_to_commit()?;
+    let local_commit = repo.revparse_single(&branch.name)?.peel_to_commit()?;
 
     // Get the branch last commit in the remote
-    let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, opts.branch))?;
+    let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, branch.name))?;
 
     // Build revwalk from specified commit up to last commit in branch in remote
     let commits = find_commits_to_sync(
@@ -354,13 +368,13 @@ pub fn sync_branch_with_remote<'a>(
 
     if commits.len() == 0 {
         println!(
-            "Nothing to synchronize, already up to date with {}/{}.",
-            opts.remote, opts.branch
+            "Nothing to synchronize on branch {}, already up to date with {}.",
+            branch.name, opts.remote
         );
         return Ok(());
     }
 
-    print!("Commits to synchronize:\n");
+    print!("Commits to synchronize on {}:\n", branch.name);
     for ci in &commits {
         print!(
             "  Commit {id}\n    {author}\n    {summary}\n\n",
@@ -376,7 +390,7 @@ pub fn sync_branch_with_remote<'a>(
 
     // cherry-pick every commit, and add the rip-it tag in the commits messages
     for ci in &commits {
-        let copied_ci = copy_commit(&repo, &ci, &commits_map, opts)?;
+        let copied_ci = copy_commit(&repo, &ci, &commits_map, branch, opts)?;
 
         // add mapping for this new pair
         commits_map.insert(ci.id(), copied_ci);
@@ -442,27 +456,63 @@ fn head_is_branch(repo: &git2::Repository, branch: &str) -> Result<bool, git2::E
     })
 }
 
+/// Create or set the branch to this commit
+fn setup_branch(
+    repo: &git2::Repository,
+    branch: &str,
+    commit: &git2::Commit,
+) -> Result<(), git2::Error> {
+    if !head_is_branch(&repo, branch)? {
+        repo.branch(branch, &commit, true)?;
+    }
+    Ok(())
+}
+
 /// Bootstrap the branch in the local repo with the state of the branch in the remote repo
 ///
 /// Create a commit that will contain the whole index of the remote's branch HEAD, with the
 /// appropriate ripit tag.
 /// Following this bootstrap, synchronisation between the two repos will be possible.
-pub fn bootstrap_branch_with_remote(
-    repo: &git2::Repository,
+pub fn bootstrap_branch_with_remote<'a>(
+    repo: &'a git2::Repository,
+    branch: &app::Branch,
+    commits_map: &mut CommitsMap<'a>,
     opts: &app::Options,
 ) -> Result<(), Error> {
     // Get the branch last commit in the remote
-    let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, opts.branch))?;
+    let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, branch.name))?;
     let remote_commit = remote_branch.peel_to_commit()?;
 
-    // build the bootstrap commit from the state of this commit
-    let commit = commit_bootstrap(&repo, &remote_commit, &opts.remote)?;
-    println!("Bootstrap commit {} created.", commit.id());
+    match commits_map.get(remote_commit.id()) {
+        Some(ci) => {
+            // If the commit exists in the CommitsMap, it means it was created
+            // when boostrapping another branch: we can re-use this commit.
+            println!(
+                "Re-use commit {} to bootstrap branch {}.",
+                ci.commit.id(),
+                branch.name
+            );
+            setup_branch(repo, &branch.name, &ci.commit)?;
+        }
+        None => {
+            // build the bootstrap commit from the state of this commit
+            let commit = commit_bootstrap(&repo, &remote_commit, &opts.remote)?;
+            println!(
+                "Bootstrap commit {} created for branch {}.",
+                commit.id(),
+                branch.name
+            );
 
-    // Create or set the local branch to this bootstrap
-    if !head_is_branch(&repo, &opts.branch)? {
-        repo.branch(&opts.branch, &commit, true)?;
-    }
+            setup_branch(repo, &branch.name, &commit)?;
+            commits_map.insert(
+                remote_commit.id(),
+                SyncedCommit {
+                    commit,
+                    uprooted: false,
+                },
+            );
+        }
+    };
 
     Ok(())
 }

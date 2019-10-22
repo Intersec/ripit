@@ -221,7 +221,7 @@ pub struct TestEnv {
 
 impl TestEnv {
     /// Create a new git repo in a tmp directory
-    pub fn new(branch_to_sync: Option<&str>) -> Self {
+    pub fn new(branches_to_sync: Option<&[&str]>) -> Self {
         // git init in tmp directory for remote
         let remote_dir = tempfile::tempdir().unwrap();
         println!("remote dir: {:?}", remote_dir);
@@ -265,8 +265,17 @@ filters:
         );
         let mut file = fs::File::create(&cfg_path).unwrap();
         file.write_all(cfg.as_bytes()).unwrap();
-        if let Some(branch) = branch_to_sync {
-            writeln!(file, "branch: {}", branch).unwrap();
+        if let Some(branches) = branches_to_sync {
+            if branches.len() == 1 {
+                // this if is kept to make sure the single branch argument is properly
+                // handled
+                writeln!(file, "branch: {}", branches[0]).unwrap();
+            } else {
+                writeln!(file, "branches:").unwrap();
+                for branch in branches {
+                    writeln!(file, "  - {}", branch).unwrap();
+                }
+            }
         }
 
         TestEnv {

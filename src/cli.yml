@@ -16,6 +16,11 @@ args:
     - bootstrap:
         long: bootstrap
         help: "Bootstrap the local repository"
+        long_help: >
+            Before the two repositories can be synchronized, the local
+            repository must be boostrapped, by creating a single commit
+            containing the current state of the remote repository. This
+            is done for each branch to synchronize.
 
     # behavioral features
     - uproot:
