@@ -389,11 +389,18 @@ pub fn sync_branch_with_remote<'a>(
     }
 
     // cherry-pick every commit, and add the rip-it tag in the commits messages
+    let mut last_commit_id = None;
     for ci in &commits {
         let copied_ci = copy_commit(&repo, &ci, &commits_map, branch, opts)?;
 
         // add mapping for this new pair
+        last_commit_id = Some(copied_ci.commit.id());
         commits_map.insert(ci.id(), copied_ci);
+    }
+
+    // Set the branch on the last copied commit
+    if let Some(ci_id) = last_commit_id {
+        setup_branch(repo, &branch.name, &repo.find_commit(ci_id).unwrap())?;
     }
 
     Ok(())

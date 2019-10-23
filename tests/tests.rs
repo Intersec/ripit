@@ -708,11 +708,10 @@ fn test_merge_multiple_branches() {
     let ci = branch.get().peel_to_commit().unwrap();
     assert!(ci.summary().unwrap().contains("c10"));
 
-    // FIXME: master was not updated
     let branch = env
         .local_repo
         .find_branch("master", git2::BranchType::Local)
         .unwrap();
     let ci = branch.get().peel_to_commit().unwrap();
-    assert!(ci.summary().unwrap().contains("Bootstrap"));
+    assert!(ci.summary().unwrap().contains("c8"));
 }
