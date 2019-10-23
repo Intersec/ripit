@@ -1,5 +1,5 @@
 name: ripit
-version: "0.1"
+version: "0.9.1"
 about: Copy commits between git repositories
 args:
     # configuration

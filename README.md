@@ -37,35 +37,41 @@ is available in *config-template.yml*, here is an example:
 ```yaml
 path: /path/to/the/local/repo
 remote: private
-branch: master
+branches:
+  - v1
+  - master
 ```
 
 ### Bootstrapping
 
-Then, a bootstrap commit must first be created, which will initialize the
+Then, bootstrap commits must first be created, which will initialize the
 local repository with a single commit, containing the state of the
-_private/master_ branch.
+_private/{branch}_ branch, for every branch to synchronize.
 
 ```console
 $ mkdir /path/to/the/local/repo && cd /path/to/the/local/repo
 $ git init
 $ git remote add private <...>
 $ ripit --bootstrap config.yml
+Fetch branch v1 in remote private...
 Fetch branch master in remote private...
-Bootstrap commit 0573aafd79531c93c4149cc8a10dad54c800ca7a created.
+Bootstrap commit 0573aafd79531c93c4149cc8a10dad54c800ca7a created for branch v1.
+Bootstrap commit 06b6e5cb76a80250a033cade1eed7d38e84ab3e4 created for branch master.
 ```
 
 ### Synchronization
-Then, running **ripit** will copy all new commits from the *private/master*
-branch into the local repository. This means that all commits from the private
+Then, running **ripit** will copy all new commits from the remote branches
+into the local repository. This means that all commits from the private
 repository that were committed before the bootstrap are hidden, and only
 the new commits will be copied in the local repository.
 
 ```console
 $ ripit config.yml
+Fetch branch v1 in remote private...
 Fetch branch master in remote private...
 Found ripit tag, last synced commit was fe81a4739b7817304eb0fa1bf5719b05e324ba21.
-Commits to synchronize:
+Nothing to synchronize on branch v1, already up to date with private.
+Commits to synchronize on master:
   Commit f1350c8c737c3d2a462956b73f8e5befd021321a
     Johnny Joestar <johnny.joestar@speedwagon.com>
     add new spin feature
@@ -128,8 +134,6 @@ conflicts, and resume the synchronization.
 
 ## Limitations
 
-* Synchronization on a single branch is handled. Support for multiple branches
-  is planned.
 * **ripit** is still in alpha stage. Complex topologies might break down, and copies
   must be impected by hand to make sure no private information are leaked. A stable
   release is planned in the near future.

@@ -315,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "ripit"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "git2 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
