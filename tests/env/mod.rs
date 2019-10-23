@@ -221,7 +221,7 @@ pub struct TestEnv {
 
 impl TestEnv {
     /// Create a new git repo in a tmp directory
-    pub fn new(first_commit_in_local: bool) -> Self {
+    pub fn new(branch_to_sync: Option<&str>) -> Self {
         // git init in tmp directory for remote
         let remote_dir = tempfile::tempdir().unwrap();
         println!("remote dir: {:?}", remote_dir);
@@ -243,17 +243,13 @@ impl TestEnv {
             config.set_str("user.email", "Bar").unwrap();
         }
 
-        let repos = if first_commit_in_local {
-            vec![&remote_repo, &local_repo]
-        } else {
-            vec![&remote_repo]
-        };
-        for repo in &repos {
+        {
             // Create initial commit
-            let tree_oid = repo.index().unwrap().write_tree().unwrap();
-            let tree = repo.find_tree(tree_oid).unwrap();
-            let sig = repo.signature().unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
+            let tree_oid = remote_repo.index().unwrap().write_tree().unwrap();
+            let tree = remote_repo.find_tree(tree_oid).unwrap();
+            let sig = remote_repo.signature().unwrap();
+            remote_repo
+                .commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
                 .unwrap();
         }
 
@@ -264,13 +260,14 @@ path: {}
 remote: private
 filters:
   - ^Refs
-  - test",
+  - test\n",
             local_dir.path().to_str().unwrap()
         );
-        fs::File::create(&cfg_path)
-            .unwrap()
-            .write_all(cfg.as_bytes())
-            .unwrap();
+        let mut file = fs::File::create(&cfg_path).unwrap();
+        file.write_all(cfg.as_bytes()).unwrap();
+        if let Some(branch) = branch_to_sync {
+            writeln!(file, "branch: {}", branch).unwrap();
+        }
 
         TestEnv {
             local_dir,
@@ -290,7 +287,7 @@ filters:
     ///  \     \
     ///   \     --> C9 -------> C10 (branch1) // second stable branch
     ///    \                /
-    ///     -> C11 -> C12 -- (branch0) // stable branch
+    ///     -> C11 -> C12 ----> C13 (branch0) // stable branch
     ///
     /// C12 conflicts with C9
     ///
@@ -313,6 +310,7 @@ filters:
 
         self.remote_repo.commit_file_and_tag("c11", "c11");
         let c12 = self.remote_repo.commit_file_and_tag("c12", "c12");
+        self.remote_repo.commit_file_and_tag("c13", "c13");
 
         self.remote_repo.branch("branch1", &c2, true).unwrap();
         self.remote_repo.set_head("refs/heads/branch1").unwrap();

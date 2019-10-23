@@ -8,7 +8,7 @@ mod env;
 /// Test that synchronization fails unless a boostrap is done
 #[test]
 fn test_bootstrap() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
 
     env.remote_repo.commit_file("a.txt", "a");
     env.remote_repo.commit_file("b.txt", "b");
@@ -31,7 +31,7 @@ fn test_bootstrap() {
 /// Test basic syncing of a few commits
 #[test]
 fn test_basic_sync() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
 
     env.run_ripit_success(&["--bootstrap"]);
 
@@ -89,7 +89,7 @@ fn test_basic_sync() {
 /// Test that exec is aborted if local changes are present
 #[test]
 fn test_abort_on_local_changes() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
 
     let filename = "local.txt";
     env.local_repo.commit_file(filename, "local");
@@ -116,7 +116,7 @@ fn test_abort_on_local_changes() {
 /// Test filtering of commits
 #[test]
 fn test_commits_filtering() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
 
     env.run_ripit_success(&["--bootstrap"]);
 
@@ -178,7 +178,7 @@ rip-it: {}
 /// Test syncing of a merge commit
 #[test]
 fn test_merge_sync() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
     env.setup_branches();
 
     // start syncing from c4
@@ -220,7 +220,7 @@ fn test_merge_sync() {
 /// Test uprooting of commits with unknown parents
 #[test]
 fn test_uproot_sync() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
     env.setup_branches();
 
     // start syncing from c5
@@ -261,7 +261,7 @@ fn test_uproot_sync() {
 /// Test uprooting with conflicts
 #[test]
 fn test_uproot_sync_with_conflicts() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
     env.setup_branches();
 
     // start syncing from c9
@@ -327,7 +327,7 @@ fn test_uproot_sync_with_conflicts() {
 ///
 #[test]
 fn test_uproot_merge() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
     env.setup_merge_uproot(false);
 
     // start syncing from c2
@@ -381,7 +381,7 @@ fn test_uproot_merge() {
 ///
 #[test]
 fn test_resync_uprooted_merge() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
     env.setup_merge_uproot(true);
 
     // start syncing from c2
@@ -430,7 +430,7 @@ fn test_resync_uprooted_merge() {
 /// Test sync of merge solving conflicts
 #[test]
 fn test_merge_solving_conflicts() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
     env.setup_merge_solving_conflicts();
 
     let c0 = env.remote_repo.revparse_single("c0").unwrap();
@@ -480,7 +480,7 @@ fn test_merge_solving_conflicts() {
 ///    B --------------------------> C5
 #[test]
 fn test_uproot_merge_with_conflicts() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
     env.setup_merge_solving_conflicts();
 
     let c4 = env.remote_repo.revparse_single("c4").unwrap();
@@ -548,7 +548,7 @@ fn test_uproot_merge_with_conflicts() {
 /// * A external cache is required.
 #[test]
 fn test_cache_file() {
-    let env = env::TestEnv::new(false);
+    let env = env::TestEnv::new(None);
     env.setup_symmetric_conflict();
 
     let c0 = env.remote_repo.revparse_single("c0").unwrap();
@@ -618,4 +618,48 @@ fn test_cache_file() {
     let parents: Vec<git2::Commit> = parents[0].parents().collect();
     assert_eq!(parents.len(), 1);
     assert!(parents[0].summary().unwrap().contains("Bootstrap"));
+}
+
+/// Test syncing of a specific branch
+#[test]
+fn test_sync_specific_branch() {
+    let env = env::TestEnv::new(Some("branch0"));
+    env.setup_branches();
+
+    // local branch does not exist
+    assert!(env
+        .local_repo
+        .find_branch("branch0", git2::BranchType::Local)
+        .is_err());
+
+    // set branch to C1
+    env.remote_repo.set_head("refs/heads/branch0").unwrap();
+    let c1 = env.remote_repo.revparse_single("c1").unwrap();
+    env.remote_repo.reset_hard(&c1);
+    env.run_ripit_success(&["--bootstrap"]);
+
+    // the local branch should have been created
+    assert!(env
+        .local_repo
+        .find_branch("branch0", git2::BranchType::Local)
+        .is_ok());
+
+    // then set branch back to C13: should sync it properly, but not touch master
+    let c13 = env.remote_repo.revparse_single("c13").unwrap();
+    env.remote_repo.reset_hard(&c13);
+    env.run_ripit_success(&["-y"]);
+
+    let branch = env
+        .local_repo
+        .find_branch("branch0", git2::BranchType::Local)
+        .unwrap();
+    let ci = branch.get().peel_to_commit().unwrap();
+    assert!(ci.summary().unwrap().contains("c13"));
+
+    let branch = env
+        .local_repo
+        .find_branch("master", git2::BranchType::Local)
+        .unwrap();
+    let ci = branch.get().peel_to_commit().unwrap();
+    assert!(ci.summary().unwrap().contains("Bootstrap"));
 }

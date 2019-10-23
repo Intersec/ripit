@@ -224,7 +224,7 @@ fn do_cherrypick<'a, 'b>(
 
         if is_merge && local_parents.len() > 1 {
             if !fix_merge_ctx(repo, local_parents[1].id()) {
-               return Err(Error::CannotSetupMergeCtx);
+                return Err(Error::CannotSetupMergeCtx);
             }
         }
 
@@ -437,6 +437,19 @@ fn commit_bootstrap<'a>(
     Ok(repo.find_commit(commit_oid)?)
 }
 
+/// Returns whether HEAD is currently tracking the given branch
+fn head_is_branch(repo: &git2::Repository, branch: &str) -> Result<bool, git2::Error> {
+    let head = repo.head()?;
+
+    Ok(if !head.is_branch() {
+        false
+    } else if let Some(name) = head.name() {
+        name == format!("refs/heads/{}", branch)
+    } else {
+        false
+    })
+}
+
 /// Bootstrap the branch in the local repo with the state of the branch in the remote repo
 ///
 /// Create a commit that will contain the whole index of the remote's branch HEAD, with the
@@ -453,6 +466,11 @@ pub fn bootstrap_branch_with_remote(
     // build the bootstrap commit from the state of this commit
     let commit = commit_bootstrap(&repo, &remote_commit, &opts.remote)?;
     println!("Bootstrap commit {} created.", commit.id());
+
+    // Create or set the local branch to this bootstrap
+    if !head_is_branch(&repo, &opts.branch)? {
+        repo.branch(&opts.branch, &commit, true)?;
+    }
 
     Ok(())
 }
