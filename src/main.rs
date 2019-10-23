@@ -42,8 +42,11 @@ fn _main() -> Result<(), error::Error> {
         // bootstrap the branch in the local repo with the state of the branch in the remote repo
         sync::bootstrap_branch_with_remote(&repo, &opts)
     } else {
+        let mut commits_map = commits_map::CommitsMap::new(&repo)?;
+        commits_map.fill_from_branch(&repo, &opts.branch)?;
+
         // sync local branch with remote by cherry-picking missing commits
-        sync::sync_branch_with_remote(&repo, &opts)
+        sync::sync_branch_with_remote(&repo, &mut commits_map, &opts)
     }
 }
 

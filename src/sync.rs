@@ -333,20 +333,12 @@ fn copy_commit<'a, 'b>(
 }
 
 /// Sync the local repository with the new changes from the given remote
-pub fn sync_branch_with_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(), Error> {
-    // Build map of remote commit sha-1 => local commit
-    //
-    // This is used to find the parents of each commits to sync, and thus properly
-    // recreate the same topology.
-    // This map is saved in a file in the local repository.
-    let mut commits_map = CommitsMap::new(repo)?;
-
-    // fill map from synced branch.
+pub fn sync_branch_with_remote<'a>(
+    repo: &'a git2::Repository,
+    commits_map: &mut CommitsMap<'a>,
+    opts: &app::Options,
+) -> Result<(), Error> {
     let local_commit = repo.revparse_single(&opts.branch)?.peel_to_commit()?;
-    commits_map.fill_from_commit(repo, local_commit.id())?;
-    // Fill map from HEAD
-    let head_id = repo.head().unwrap().target().unwrap();
-    commits_map.fill_from_commit(repo, head_id)?;
 
     // Get the branch last commit in the remote
     let remote_branch = repo.revparse_single(&format!("{}/{}", opts.remote, opts.branch))?;

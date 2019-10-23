@@ -43,10 +43,27 @@ impl<'a> CommitsMap<'a> {
             Err(err) => return Err(Error::CacheOpenError { err, filename }),
         };
 
-        Ok(Self { map, cache_file })
+        let mut commits_map = Self { map, cache_file };
+
+        // Fill map from HEAD if it exists
+        if let Ok(head) = repo.head() {
+            commits_map.fill_from_commit(repo, head.target().unwrap())?;
+        }
+
+        Ok(commits_map)
     }
 
-    pub fn fill_from_commit(
+    pub fn fill_from_branch(
+        &mut self,
+        repo: &'a git2::Repository,
+        branch: &str,
+    ) -> Result<(), Error> {
+        // fill map from synced branch.
+        let local_commit = repo.revparse_single(&branch)?.peel_to_commit()?;
+        self.fill_from_commit(repo, local_commit.id())
+    }
+
+    fn fill_from_commit(
         &mut self,
         repo: &'a git2::Repository,
         commit_id: git2::Oid,
