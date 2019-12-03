@@ -280,6 +280,7 @@ fn do_cherrypick<'a, 'b>(
 
     // make the working directory match HEAD
     force_checkout_head(&repo)?;
+    repo.cleanup_state()?;
 
     Ok(new_commit)
 }

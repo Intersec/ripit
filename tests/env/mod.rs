@@ -445,7 +445,13 @@ filters:
     }
 
     pub fn run_ripit_success(&self, args: &[&str]) {
-        self.run_ripit(true, args, None)
+        self.run_ripit(true, args, None);
+
+        // make sure that the git context is cleaned
+        let path = self.local_repo.path().join("CHERRY_PICK_HEAD");
+        assert!(!path.exists());
+        let path = self.local_repo.path().join("MERGE_HEAD");
+        assert!(!path.exists());
     }
 }
 
