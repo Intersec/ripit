@@ -23,6 +23,7 @@ pub struct Options {
     pub uproot: bool,
     pub verbose: bool,
     pub yes: bool,
+    pub fetch: bool,
 }
 
 #[derive(Deserialize)]
@@ -96,5 +97,6 @@ pub fn parse_args() -> Result<Options, error::Error> {
         uproot: matches.is_present("uproot"),
         verbose: !matches.is_present("quiet"),
         yes: matches.is_present("yes"),
+        fetch: !matches.is_present("nofetch"),
     })
 }

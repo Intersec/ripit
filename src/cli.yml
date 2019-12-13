@@ -37,6 +37,16 @@ args:
             In that case, we want to cherry-pick the commits brought by
             the merge (or in this context, "uproot" them).
             This behavior can be activated with this flag.
+    - nofetch:
+        short: F
+        long: no-fetch
+        help: "Do not fetch private repository"
+        long_help: >
+            By default, ripit will fetch the last commits from the private
+            repository before computing the differences with the local
+            repository. This behavior can be deactivated with this option,
+            which can be useful if the fetch requires authentication which
+            is not handled in ripit.
 
     # common options shared by every action
     - quiet:

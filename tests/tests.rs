@@ -39,14 +39,18 @@ fn test_basic_sync() {
     env.remote_repo.commit_file("b.txt", "b");
     assert_eq!(env.remote_repo.count_commits(), 3); // init + 2 commits
 
+    // without the fetch, won't find any commits to sync
+    env.run_ripit_success(&["-yF"]);
+    assert_eq!(env.local_repo.count_commits(), 1);
+
     env.run_ripit_success(&["-y"]); // missing initial commit
+    assert_eq!(env.local_repo.count_commits(), 3); // bootstrap + 2 synced commits
 
     // head tracks master
     let local_head = env.local_repo.head().unwrap();
     assert!(local_head.is_branch(), true);
     assert_eq!(local_head.shorthand().unwrap(), "master");
 
-    assert_eq!(env.local_repo.count_commits(), 3); // bootstrap + 2 synced commits
     env.local_repo.check_file("a.txt", true, true);
     env.local_repo.check_file("b.txt", true, true);
 

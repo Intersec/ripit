@@ -35,8 +35,10 @@ fn _main() -> Result<(), error::Error> {
     let repo = git2::Repository::open(&opts.repo)?;
     check_local_diff(&repo)?;
 
-    // fetch last commits in remote
-    sync::update_remote(&repo, &opts)?;
+    if opts.fetch {
+        // fetch last commits in remote
+        sync::update_remote(&repo, &opts)?;
+    }
 
     let mut commits_map = commits_map::CommitsMap::new(&repo)?;
 
@@ -47,13 +49,23 @@ fn _main() -> Result<(), error::Error> {
             sync::bootstrap_branch_with_remote(&repo, branch, &mut commits_map, &opts)?
         }
     } else {
+        let mut has_synced = false;
+
         for branch in &opts.branches {
             commits_map.fill_from_branch(&repo, &branch.name)?;
         }
 
         for branch in &opts.branches {
             // sync local branch with remote by cherry-picking missing commits
-            sync::sync_branch_with_remote(&repo, branch, &mut commits_map, &opts)?
+            has_synced |= sync::sync_branch_with_remote(&repo, branch, &mut commits_map, &opts)?
+        }
+        if !opts.fetch && !has_synced {
+            eprintln!(
+                "No commits to synchronize found. Have you fetched \
+                 the latest commits from the private repository with \
+                 `git fetch {}`?",
+                opts.remote
+            );
         }
     }
     Ok(())

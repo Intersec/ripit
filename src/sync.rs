@@ -15,7 +15,12 @@ pub fn update_remote(repo: &git2::Repository, opts: &app::Options) -> Result<(),
         if opts.verbose {
             println!("Fetch branch {} in remote {}...", branch.name, opts.remote);
         }
-        remote.fetch(&[&branch.name], None, None)?
+        if let Err(e) = remote.fetch(&[&branch.name], None, None) {
+            eprintln!("Fetch failed. Consider running `git fetch {}` \
+                      yourself, and use the -F option to avoid the fetch \
+                      in ripit.", opts.remote);
+            return Err(e);
+        }
     }
     Ok(())
 }
@@ -347,12 +352,13 @@ fn copy_commit<'a, 'b>(
 }
 
 /// Sync the local repository with the new changes from the given remote
+/// false is returned if there was no commits to synchronize.
 pub fn sync_branch_with_remote<'a>(
     repo: &'a git2::Repository,
     branch: &app::Branch,
     commits_map: &mut CommitsMap<'a>,
     opts: &app::Options,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     let local_commit = repo.revparse_single(&branch.name)?.peel_to_commit()?;
 
     // Get the branch last commit in the remote
@@ -372,7 +378,7 @@ pub fn sync_branch_with_remote<'a>(
             "Nothing to synchronize on branch {}, already up to date with {}.",
             branch.name, opts.remote
         );
-        return Ok(());
+        return Ok(false);
     }
 
     print!("Commits to synchronize on {}:\n", branch.name);
@@ -386,7 +392,7 @@ pub fn sync_branch_with_remote<'a>(
     }
 
     if !opts.yes && !util::confirm_action() {
-        return Ok(());
+        return Ok(true);
     }
 
     // cherry-pick every commit, and add the rip-it tag in the commits messages
@@ -404,7 +410,7 @@ pub fn sync_branch_with_remote<'a>(
         setup_branch(repo, &branch.name, &repo.find_commit(ci_id).unwrap())?;
     }
 
-    Ok(())
+    Ok(true)
 }
 
 // }}}
