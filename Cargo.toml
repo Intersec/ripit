@@ -10,7 +10,7 @@ git2 = "0.11"
 # Temp dir creation for tests
 tempfile = "3.1"
 # Regex support for filtering
-regex = "1.3"
+regex = "1.5"
 # Yaml deserializer for config file
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
